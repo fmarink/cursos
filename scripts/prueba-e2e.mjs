@@ -116,6 +116,19 @@ try {
   verificar('Inicio de sesión de operaciones', true)
   await capturar(ops, 'tablero')
 
+  // El tablero no debe decir que no hay cursos cuando la única jornada es la de
+  // hoy: sale en «Hoy en sala» y la tabla de abajo queda vacía por eso, no
+  // porque falten cursos.
+  const tablero = await ops.locator('body').innerText()
+  verificar(
+    'El tablero muestra la jornada de hoy en sala',
+    tablero.includes('Hoy en sala') && tablero.includes('Manejo Gases Criogénicos'),
+  )
+  verificar(
+    'Y no dice «Cree el primer curso» existiendo uno',
+    !tablero.includes('No hay sesiones registradas todavía'),
+  )
+
   // Entra a la sesión de hoy
   await ops.click('text=Manejo Gases Criogénicos')
   await ops.waitForURL(/\/sesiones\//, { timeout: 15000 })

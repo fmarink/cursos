@@ -12,6 +12,7 @@ import {
   tiposCurso,
 } from '@/db/schema'
 import { sesionActual } from '@/lib/auth'
+import { hoyEnChile } from '@/lib/fechas'
 import { Estado, Tarjeta, TituloSeccion, Vacio, formatearFecha } from '@/components/ui'
 
 export const dynamic = 'force-dynamic'
@@ -64,7 +65,7 @@ export default async function Tablero() {
     .orderBy(desc(sesiones.fecha))
     .limit(25)
 
-  const hoyISO = new Date().toISOString().slice(0, 10)
+  const hoyISO = hoyEnChile()
   const deHoy = filas.filter((f) => f.sesion.fecha === hoyISO)
   const resto = filas.filter((f) => f.sesion.fecha !== hoyISO)
 
@@ -120,9 +121,14 @@ export default async function Tablero() {
                 Días promedio entre cierre y envío
               </p>
               <p className="mt-1 text-3xl font-bold tabular-nums text-slate-900">
+                {/* El promedio puede salir levemente negativo: si una sesión se
+                    reabre y se vuelve a cerrar después de haber enviado el
+                    expediente, `cerrada_en` queda posterior a `enviado_en`.
+                    Medido en días sigue siendo 0 —se envió el mismo día—, así
+                    que se muestra 0,0 en vez de un desconcertante «-0.0». */}
                 {promedio === null || promedio === undefined
                   ? '—'
-                  : Number(promedio).toFixed(1)}
+                  : Math.max(0, Number(promedio)).toFixed(1)}
               </p>
               <p className="mt-1 text-xs text-slate-500">
                 Métrica de éxito del proyecto. Objetivo: 0 días (mismo día del curso).
@@ -156,11 +162,24 @@ export default async function Tablero() {
         <TituloSeccion>Sesiones recientes y programadas</TituloSeccion>
         {resto.length === 0 ? (
           <Vacio>
-            No hay sesiones registradas todavía.{' '}
-            <Link href="/cursos/nuevo" className="font-semibold text-marca-600 underline">
-              Cree el primer curso
-            </Link>
-            .
+            {filas.length > 0 ? (
+              <>
+                Todo lo que hay está hoy en sala, arriba. Acá aparecerán las jornadas de otros
+                días.{' '}
+                <Link href="/cursos/nuevo" className="font-semibold text-marca-600 underline">
+                  Programar otro curso
+                </Link>
+                .
+              </>
+            ) : (
+              <>
+                No hay sesiones registradas todavía.{' '}
+                <Link href="/cursos/nuevo" className="font-semibold text-marca-600 underline">
+                  Cree el primer curso
+                </Link>
+                .
+              </>
+            )}
           </Vacio>
         ) : (
           <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">

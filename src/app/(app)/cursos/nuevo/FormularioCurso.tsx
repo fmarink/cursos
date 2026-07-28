@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react'
 import { crearCurso } from '../acciones'
+import { hoyEnChile } from '@/lib/fechas'
 
 type Jornada = { fecha: string; horaInicio: string; horaFin: string; profesorId: string }
 
@@ -16,7 +17,7 @@ export default function FormularioCurso({
   lugares: { id: string; nombre: string; clienteId: string | null }[]
   profesores: { id: string; nombre: string }[]
 }) {
-  const hoy = new Date().toISOString().slice(0, 10)
+  const hoy = hoyEnChile()
 
   const [clienteId, setClienteId] = useState(clientes[0]?.id ?? '')
   const [tipoCursoId, setTipoCursoId] = useState(tipos[0]?.id ?? '')
