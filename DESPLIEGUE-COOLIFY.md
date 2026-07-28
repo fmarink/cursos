@@ -44,67 +44,65 @@ git push -u origin main
 
 ---
 
-## 2. Crear la base de datos en Coolify
+## 2. Crear la aplicación como Docker Compose
+
+Todo va en un solo stack: la base de datos y la aplicación juntas, desplegadas
+con `docker-compose.coolify.yaml`. No hay que crear servicios por separado ni
+copiar cadenas de conexión a mano.
 
 En el panel de Coolify:
 
 1. Entra al proyecto donde vivirá la aplicación (o crea uno: **Uppercap**).
-2. **+ New** → **Database** → **PostgreSQL**.
-3. Versión **16**. Nombre: `uppercap-db`.
-4. **Deploy**.
+2. **+ New** → **Application**.
+3. Origen: **Private Repository (with GitHub App)** si el repositorio es
+   privado, o **Public Repository** con la URL si lo hiciste público.
+4. Rama: `main`.
+5. **Build Pack: Docker Compose**.
+6. **Docker Compose Location**: `/docker-compose.coolify.yaml`
 
-Cuando termine, abre la base y copia la **Postgres URL interna** — la que empieza
-con `postgresql://` y usa el nombre del servicio como host, no `localhost`. Esa
-es la que va en la aplicación: el tráfico entre ambos contenedores no sale a
-internet.
+Coolify lee el archivo, detecta los dos servicios y arma el stack.
 
-> No expongas el puerto de la base al exterior. La aplicación la alcanza por la
-> red interna de Coolify, y dejarla pública es un riesgo innecesario.
+### Los secretos se generan solos
 
----
+El archivo no contiene ninguna contraseña. Usa las variables mágicas de
+Coolify, que se generan una vez y se reutilizan donde aparezcan:
 
-## 3. Crear la aplicación
-
-1. **+ New** → **Application** → **Public Repository** o **GitHub App**, según
-   cómo hayas subido el código.
-2. Rama: `main`.
-3. **Build Pack: Dockerfile**. Coolify detecta el `Dockerfile` de la raíz.
-   No uses Nixpacks: la imagen incluye Chromium a propósito.
-4. **Port**: `3000`.
-5. **Health check path**: `/api/salud`.
-
-### Variables de entorno
-
-En la pestaña **Environment Variables** de la aplicación:
-
-| Variable | Valor |
+| Variable | Para qué |
 |---|---|
-| `DATABASE_URL` | La URL interna que copiaste en el paso 2 |
-| `SESSION_SECRET` | Un valor aleatorio largo — genéralo con el comando de abajo |
-| `APP_URL` | `http://localhost:3000` |
-| `CORREO_PROVEEDOR` | `consola` al principio; `resend` cuando configures el correo |
+| `SERVICE_FQDN_APP_3000` | Dominio público y ruteo hacia el puerto 3000 |
+| `SERVICE_PASSWORD_DB` | Contraseña de PostgreSQL |
+| `SERVICE_BASE64_64_SESION` | Secreto de firma de las cookies de sesión |
 
-Genera el secreto en tu Mac y pégalo:
+Al desplegar por primera vez las verás aparecer con valores ya asignados en la
+pestaña **Environment Variables**. No las edites después: cambiar
+`SERVICE_BASE64_64_SESION` invalida todas las sesiones abiertas, y cambiar
+`SERVICE_PASSWORD_DB` deja la aplicación sin poder conectarse a su propia base.
 
-```bash
-openssl rand -base64 48 | tr -d '\n/+=' | cut -c1-48
-```
+### Lo único que quizás quieras ajustar
 
-Dos aclaraciones que evitan errores:
+`CORREO_PROVEEDOR` viene en `consola`: el envío al cliente se registra en los
+logs y el expediente queda marcado como enviado, pero no sale ningún correo.
+Sirve para operar el sistema completo antes de contratar el proveedor. Ver la
+sección "Correo al cliente" más abajo.
 
-**`APP_URL` se queda en `localhost`.** Solo la usa el servidor para imprimirse a
-sí mismo el PDF. La dirección de los códigos QR se deduce del dominio por el que
-entra el relator, así que funciona sola en cualquier dominio sin configurar nada.
+## 3. La base de datos
 
-**`SESSION_SECRET` no se cambia después.** Si lo cambias, todas las sesiones
-abiertas se invalidan y hay que volver a iniciar sesión.
+No hay que crearla: el propio stack levanta PostgreSQL 16 con un volumen
+llamado `datos-uppercap`, que **sobrevive a cada nuevo despliegue**. Ahí viven
+las firmas de los participantes y los expedientes generados.
 
----
+La aplicación espera a que la base responda antes de arrancar, y aplica las
+migraciones pendientes automáticamente. Si una migración falla, el contenedor
+no arranca — es preferible a servir la aplicación contra un esquema desalineado.
+
+El puerto de la base no se expone al exterior: el tráfico entre los dos
+contenedores va por la red interna del stack.
 
 ## 4. Dominio y HTTPS
 
-1. En la aplicación, pestaña **Domains**, escribe tu dominio completo con
-   `https://`, por ejemplo `https://cursos.tudominio.cl`.
+1. En la aplicación, pestaña **Domains**, busca el servicio `app` y escribe tu
+   dominio completo con `https://`, por ejemplo `https://cursos.tudominio.cl`.
+   Coolify lo asigna a la variable `SERVICE_FQDN_APP_3000` y configura el proxy.
 2. Verifica que el DNS de ese subdominio apunte por registro `A` a la IP del
    servidor. Compruébalo desde tu Mac:
 
@@ -186,7 +184,8 @@ Las migraciones nuevas se aplican solas en el arranque siguiente.
 
 ## Respaldos
 
-En la base de datos, pestaña **Backups**, activa el respaldo automático diario.
+En el servicio `db` del stack, pestaña **Backups**, activa el respaldo
+automático diario.
 Es importante de verdad: ahí viven las firmas de los participantes y los
 expedientes generados, y son el respaldo legal de los cursos dictados.
 
@@ -233,6 +232,11 @@ servidor comparte otras aplicaciones, 4 GB deja margen.
 
 ## Si algo falla
 
+**Coolify no encuentra el archivo de compose**
+
+La ruta va con barra inicial: `/docker-compose.coolify.yaml`. Y el Build Pack
+tiene que ser **Docker Compose**, no Dockerfile ni Nixpacks.
+
 **El build se cae instalando Chromium**
 
 El servidor se quedó sin espacio o sin memoria. La imagen final pesa alrededor
@@ -241,14 +245,19 @@ servidor.
 
 **La aplicación arranca y se cae sola**
 
-Casi siempre es `DATABASE_URL`. Revisa los logs en Coolify: si dice
-`ECONNREFUSED`, la URL apunta a `localhost` en vez de al nombre del servicio de
-la base. Usa la URL **interna** que entrega Coolify.
+Mira los logs del servicio `app`. Si dice `ECONNREFUSED`, la base todavía no
+estaba lista: el compose ya espera con `condition: service_healthy`, así que
+esto solo pasa si el volumen quedó corrupto. Revisa los logs del servicio `db`.
+
+Si dice `password authentication failed`, alguien editó `SERVICE_PASSWORD_DB`
+después del primer despliegue. El volumen conserva la contraseña original: hay
+que devolver la variable a su valor anterior.
 
 **"No se pudo generar el PDF"**
 
-Chromium no está en la imagen. Verifica que el Build Pack sea **Dockerfile** y
-no Nixpacks — Nixpacks arma su propia imagen e ignora el `Dockerfile`.
+Chromium no está en la imagen. El servicio `app` del compose construye desde el
+`Dockerfile` del repositorio, que sí lo incluye. Si Coolify quedó configurado
+con Nixpacks, arma su propia imagen e ignora ese `Dockerfile`.
 
 **Los QR apuntan al dominio equivocado**
 

@@ -5,6 +5,10 @@
 #
 # Las variables SERVICE_* son magia de Coolify: genera los valores una sola vez,
 # los reutiliza donde aparezcan y los guarda. No hay secretos escritos aquí.
+#
+#   SERVICE_FQDN_APP_3000    dominio público y ruteo hacia el puerto 3000
+#   SERVICE_PASSWORD_DB      contraseña de PostgreSQL, generada al azar
+#   SERVICE_BASE64_64_SESION secreto de firma de las cookies de sesión
 
 services:
   app:
@@ -21,6 +25,8 @@ services:
       # Uso interno del servidor para imprimirse el PDF a sí mismo.
       # El dominio de los códigos QR se deduce solo de cada petición.
       - APP_URL=http://localhost:3000
+      # "consola" registra el envío sin salir a la red. Cambiar a "resend"
+      # cuando esté contratado el proveedor de correo.
       - CORREO_PROVEEDOR=consola
       - NODE_ENV=production
       - TZ=America/Santiago

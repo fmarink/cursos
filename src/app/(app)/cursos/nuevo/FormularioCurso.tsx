@@ -81,8 +81,30 @@ export default function FormularioCurso({
       <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-6">
         <p className="font-semibold text-amber-900">Faltan datos base</p>
         <p className="mt-1 text-sm text-amber-800">
-          Antes de crear un curso necesita al menos un cliente y un tipo de curso registrados.
+          Un curso se arma sobre un cliente y un tipo de curso. Cree lo que falta y vuelva aquí.
         </p>
+        <ul className="mt-4 space-y-2">
+          {clientes.length === 0 && (
+            <li>
+              <a
+                href="/clientes"
+                className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-amber-900 ring-1 ring-amber-300 hover:bg-amber-100"
+              >
+                Crear el primer cliente →
+              </a>
+            </li>
+          )}
+          {tipos.length === 0 && (
+            <li>
+              <a
+                href="/tipos-curso"
+                className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-amber-900 ring-1 ring-amber-300 hover:bg-amber-100"
+              >
+                Crear el primer tipo de curso →
+              </a>
+            </li>
+          )}
+        </ul>
       </div>
     )
   }

@@ -26,6 +26,7 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
             <Enlace href="/cursos">Cursos</Enlace>
             {esGestion && (
               <>
+                <Enlace href="/tipos-curso">Tipos de curso</Enlace>
                 <Enlace href="/profesores">Profesores</Enlace>
                 <Enlace href="/clientes">Clientes</Enlace>
                 <Enlace href="/plantillas">Plantillas</Enlace>
