@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { formatearNota } from '@/lib/notas'
+import CargaArchivo from './CargaArchivo'
 import {
   alternarActivaEncuesta,
   alternarActivaPlantilla,
@@ -380,12 +381,19 @@ function TarjetaEvaluacion({
             />
           </div>
         ) : (
-          <button
-            onClick={() => setNuevaPregunta(true)}
-            className="mt-3 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            + Agregar pregunta
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setNuevaPregunta(true)}
+              className="mt-3 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              + Agregar pregunta
+            </button>
+            <CargaArchivo
+              destino="EVALUACION"
+              plantillaId={plantilla.id}
+              preguntasActuales={plantilla.preguntas.length}
+            />
+          </div>
         )}
       </div>
     </div>
@@ -519,12 +527,19 @@ function TarjetaEncuesta({
             />
           </div>
         ) : (
-          <button
-            onClick={() => setNuevaPregunta(true)}
-            className="mt-3 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            + Agregar pregunta
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setNuevaPregunta(true)}
+              className="mt-3 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              + Agregar pregunta
+            </button>
+            <CargaArchivo
+              destino="ENCUESTA"
+              plantillaId={plantilla.id}
+              preguntasActuales={plantilla.preguntas.length}
+            />
+          </div>
         )}
       </div>
     </div>

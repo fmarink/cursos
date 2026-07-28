@@ -107,7 +107,21 @@ npm run db:seed              # carga datos de prueba
 npm run db:reset             # vacía las tablas (conserva el esquema)
 npm run typecheck            # verificación de tipos
 node scripts/prueba-e2e.mjs  # prueba de aceptación end-to-end
+node scripts/prueba-carga-archivo.mjs   # prueba de la carga de preguntas por archivo
 ```
+
+### Cargar evaluaciones y encuestas desde un archivo
+
+En **Plantillas**, cada evaluación y cada encuesta tiene el botón **Cargar
+desde archivo**. Ahí se descarga una plantilla Excel con las columnas ya
+armadas, validación desplegable en la columna *Tipo* y una hoja de
+instrucciones. Se llena en Excel, se sube, y antes de guardar la pantalla
+muestra pregunta por pregunta lo que el sistema entendió y qué filas tienen
+problemas, con el número de fila real de la planilla. Nada se guarda hasta
+confirmar. También acepta `.csv` (coma, punto y coma o tabulación).
+
+Si la plantilla ya tiene preguntas, al confirmar se elige entre agregar las
+nuevas al final o reemplazar las existentes.
 
 ### Importar la base de profesores desde Excel
 

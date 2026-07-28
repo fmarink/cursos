@@ -282,6 +282,205 @@ export async function eliminarPreguntaEncuesta(preguntaId: string): Promise<Resu
   return { ok: true }
 }
 
+// ---------------------------------------------------------------------------
+// Carga desde archivo
+// ---------------------------------------------------------------------------
+
+/**
+ * Lee el archivo y devuelve lo que encontró SIN guardar nada. La pantalla
+ * muestra ese resultado y recién entonces el usuario confirma. Es el mismo
+ * criterio del importador de relatores: primero se mira, después se guarda.
+ */
+export async function analizarArchivoEvaluacion(formData: FormData) {
+  await requerirRol('ADMIN', 'OPERACIONES')
+  const archivo = formData.get('archivo')
+  if (!(archivo instanceof File) || archivo.size === 0) {
+    return { ok: false as const, error: 'Seleccione un archivo.' }
+  }
+  if (archivo.size > 2_000_000) {
+    return { ok: false as const, error: 'El archivo supera los 2 MB. Revise que sea la plantilla.' }
+  }
+  try {
+    const buffer = Buffer.from(await archivo.arrayBuffer())
+    const { analizarEvaluacion } = await import('@/lib/plantillas-archivo')
+    const analisis = await analizarEvaluacion(buffer, archivo.name)
+    return { ok: true as const, ...analisis }
+  } catch {
+    return {
+      ok: false as const,
+      error: 'No se pudo leer el archivo. Debe ser .xlsx o .csv, sin contraseña.',
+    }
+  }
+}
+
+export async function analizarArchivoEncuesta(formData: FormData) {
+  await requerirRol('ADMIN', 'OPERACIONES')
+  const archivo = formData.get('archivo')
+  if (!(archivo instanceof File) || archivo.size === 0) {
+    return { ok: false as const, error: 'Seleccione un archivo.' }
+  }
+  if (archivo.size > 2_000_000) {
+    return { ok: false as const, error: 'El archivo supera los 2 MB. Revise que sea la plantilla.' }
+  }
+  try {
+    const buffer = Buffer.from(await archivo.arrayBuffer())
+    const { analizarEncuesta } = await import('@/lib/plantillas-archivo')
+    const analisis = await analizarEncuesta(buffer, archivo.name)
+    return { ok: true as const, ...analisis }
+  } catch {
+    return {
+      ok: false as const,
+      error: 'No se pudo leer el archivo. Debe ser .xlsx o .csv, sin contraseña.',
+    }
+  }
+}
+
+const LotePreguntas = z.object({
+  modo: z.enum(['AGREGAR', 'REEMPLAZAR']),
+  preguntas: z
+    .array(
+      z.object({
+        enunciado: z.string().trim().min(5).max(500),
+        tipo: z.enum(['SELECCION_MULTIPLE', 'VERDADERO_FALSO', 'RESPUESTA_BREVE']),
+        opciones: z.array(z.string().trim()).default([]),
+        respuestaCorrecta: z.string().default(''),
+        puntaje: z.coerce.number().int().min(1).max(20),
+      }),
+    )
+    .min(1, 'No hay preguntas que cargar.')
+    .max(200, 'Demasiadas preguntas en un solo archivo.'),
+})
+
+/**
+ * Guarda el lote ya revisado. Vuelve a validar cada pregunta acá: lo que llega
+ * viene del navegador y no se da por bueno solo porque el análisis lo aprobó.
+ */
+export async function cargarPreguntasEvaluacion(
+  plantillaId: string,
+  datos: unknown,
+): Promise<Resultado> {
+  const usuario = await requerirRol('ADMIN', 'OPERACIONES')
+  const parsed = LotePreguntas.safeParse(datos)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message }
+  const { modo, preguntas: lote } = parsed.data
+
+  const [plantilla] = await db
+    .select()
+    .from(plantillasEvaluacion)
+    .where(eq(plantillasEvaluacion.id, plantillaId))
+    .limit(1)
+  if (!plantilla) return { ok: false, error: 'La evaluación ya no existe.' }
+
+  for (const [i, p] of lote.entries()) {
+    if (p.tipo === 'SELECCION_MULTIPLE') {
+      const limpias = p.opciones.filter((o) => o.trim().length > 0)
+      if (limpias.length < 2) {
+        return { ok: false, error: `Pregunta ${i + 1}: necesita al menos 2 opciones.` }
+      }
+      const indice = Number(p.respuestaCorrecta)
+      if (
+        p.respuestaCorrecta.trim() === '' ||
+        !Number.isInteger(indice) ||
+        indice < 0 ||
+        indice >= limpias.length
+      ) {
+        return { ok: false, error: `Pregunta ${i + 1}: la respuesta correcta no es válida.` }
+      }
+    }
+    if (p.tipo === 'VERDADERO_FALSO' && p.respuestaCorrecta !== 'true' && p.respuestaCorrecta !== 'false') {
+      return { ok: false, error: `Pregunta ${i + 1}: indique si es verdadera o falsa.` }
+    }
+  }
+
+  if (modo === 'REEMPLAZAR') {
+    await db.delete(preguntas).where(eq(preguntas.plantillaId, plantillaId))
+  }
+
+  const [{ ultimo }] = await db
+    .select({ ultimo: max(preguntas.orden) })
+    .from(preguntas)
+    .where(eq(preguntas.plantillaId, plantillaId))
+
+  let orden = ultimo ?? 0
+  await db.insert(preguntas).values(
+    lote.map((p) => ({
+      plantillaId,
+      orden: ++orden,
+      enunciado: p.enunciado,
+      tipo: p.tipo,
+      opciones: p.tipo === 'SELECCION_MULTIPLE' ? p.opciones.filter((o) => o.trim() !== '') : null,
+      respuestaCorrecta: p.respuestaCorrecta || null,
+      puntaje: p.puntaje,
+    })),
+  )
+
+  await auditar({
+    entidad: 'plantilla_evaluacion',
+    entidadId: plantillaId,
+    accion: modo === 'REEMPLAZAR' ? 'preguntas_reemplazadas_archivo' : 'preguntas_cargadas_archivo',
+    valorNuevo: { cantidad: lote.length, modo },
+    usuarioId: usuario.id,
+  })
+
+  revalidatePath('/plantillas')
+  return { ok: true }
+}
+
+const LotePreguntasEnc = z.object({
+  modo: z.enum(['AGREGAR', 'REEMPLAZAR']),
+  preguntas: z
+    .array(
+      z.object({
+        enunciado: z.string().trim().min(5).max(500),
+        tipo: z.enum(['ESCALA', 'TEXTO', 'SI_NO']),
+      }),
+    )
+    .min(1, 'No hay preguntas que cargar.')
+    .max(200, 'Demasiadas preguntas en un solo archivo.'),
+})
+
+export async function cargarPreguntasEncuesta(
+  plantillaId: string,
+  datos: unknown,
+): Promise<Resultado> {
+  const usuario = await requerirRol('ADMIN', 'OPERACIONES')
+  const parsed = LotePreguntasEnc.safeParse(datos)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message }
+  const { modo, preguntas: lote } = parsed.data
+
+  const [plantilla] = await db
+    .select()
+    .from(plantillasEncuesta)
+    .where(eq(plantillasEncuesta.id, plantillaId))
+    .limit(1)
+  if (!plantilla) return { ok: false, error: 'La encuesta ya no existe.' }
+
+  if (modo === 'REEMPLAZAR') {
+    await db.delete(preguntasEncuesta).where(eq(preguntasEncuesta.plantillaId, plantillaId))
+  }
+
+  const [{ ultimo }] = await db
+    .select({ ultimo: max(preguntasEncuesta.orden) })
+    .from(preguntasEncuesta)
+    .where(eq(preguntasEncuesta.plantillaId, plantillaId))
+
+  let orden = ultimo ?? 0
+  await db.insert(preguntasEncuesta).values(
+    lote.map((p) => ({ plantillaId, orden: ++orden, enunciado: p.enunciado, tipo: p.tipo })),
+  )
+
+  await auditar({
+    entidad: 'plantilla_encuesta',
+    entidadId: plantillaId,
+    accion: modo === 'REEMPLAZAR' ? 'preguntas_reemplazadas_archivo' : 'preguntas_cargadas_archivo',
+    valorNuevo: { cantidad: lote.length, modo },
+    usuarioId: usuario.id,
+  })
+
+  revalidatePath('/plantillas')
+  return { ok: true }
+}
+
 /**
  * Crea la encuesta de satisfacción estándar, con las preguntas habituales de
  * una capacitación. Ahorra escribirlas a mano y después se editan.
