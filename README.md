@@ -108,7 +108,21 @@ npm run db:reset             # vacía las tablas (conserva el esquema)
 npm run typecheck            # verificación de tipos
 node scripts/prueba-e2e.mjs  # prueba de aceptación end-to-end
 node scripts/prueba-carga-archivo.mjs   # prueba de la carga de preguntas por archivo
+node scripts/prueba-qr.mjs              # prueba de la proyección de los tres QR
 ```
+
+### Proyectar los QR en sala
+
+El botón de proyectar abre a pantalla completa el QR de la pestaña que el
+relator esté mirando, y lo dice: *Proyectar asistencia*, *Proyectar
+evaluación*, *Proyectar encuesta*. Ya proyectando, hay tres botones al pie para
+cambiar entre los propósitos sin volver al panel — en sala se pasa de la
+asistencia a la evaluación y de ahí a la encuesta con el proyector encendido.
+
+Si el propósito todavía no está habilitado, el QR se proyecta en gris con el
+aviso «Todavía no está habilitada». Al activarlo desde el panel, la proyección
+se destapa sola en menos de tres segundos: nadie tiene que ir a recargar el
+computador conectado al proyector.
 
 ### Cargar evaluaciones y encuestas desde un archivo
 

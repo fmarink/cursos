@@ -45,6 +45,13 @@ export default async function PaginaQR({
       curso={ctx.curso.nombreActividad}
       cliente={ctx.cliente.razonSocial}
       sesionId={id}
+      habilitado={
+        proposito === 'evaluacion'
+          ? ctx.sesion.evaluacionAbierta
+          : proposito === 'encuesta'
+            ? ctx.sesion.encuestaAbierta
+            : ctx.sesion.asistenciaAbierta
+      }
     />
   )
 }

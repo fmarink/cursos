@@ -18,6 +18,12 @@ const TITULOS: Record<string, { titulo: string; instruccion: string }> = {
   },
 }
 
+const ETIQUETAS: Record<'asistencia' | 'evaluacion' | 'encuesta', string> = {
+  asistencia: 'Asistencia',
+  evaluacion: 'Evaluación',
+  encuesta: 'Encuesta',
+}
+
 export default function PantallaQR({
   qr,
   url,
@@ -25,6 +31,7 @@ export default function PantallaQR({
   curso,
   cliente,
   sesionId,
+  habilitado,
 }: {
   qr: string
   url: string
@@ -32,22 +39,31 @@ export default function PantallaQR({
   curso: string
   cliente: string
   sesionId: string
+  habilitado: boolean
 }) {
   const [registrados, setRegistrados] = useState<number | null>(null)
+  const [activo, setActivo] = useState(habilitado)
   const t = TITULOS[proposito] ?? TITULOS.asistencia
 
-  // Contador en vivo sobre la proyección: la sala ve avanzar el número.
+  // La proyección se mantiene al día sola: el contador de asistencia avanza a
+  // la vista de la sala, y si el relator habilita la evaluación desde el panel
+  // el QR proyectado deja de estar en gris sin que nadie toque el proyector.
   useEffect(() => {
-    if (proposito !== 'asistencia') return
     const consultar = async () => {
       try {
         const r = await fetch(`/api/sesiones/${sesionId}/registros`, { cache: 'no-store' })
-        if (r.ok) {
-          const d = await r.json()
-          setRegistrados(d.resumen.registrados)
-        }
+        if (!r.ok) return
+        const d = await r.json()
+        if (proposito === 'asistencia') setRegistrados(d.resumen.registrados)
+        setActivo(
+          proposito === 'evaluacion'
+            ? d.evaluacionAbierta
+            : proposito === 'encuesta'
+              ? d.encuestaAbierta
+              : d.asistenciaAbierta,
+        )
       } catch {
-        /* sin red: se reintenta */
+        /* sin red: se reintenta en el próximo ciclo */
       }
     }
     consultar()
@@ -77,12 +93,26 @@ export default function PantallaQR({
         <p className="text-lg text-slate-500">{cliente}</p>
       </header>
 
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={qr}
-        alt="Código QR"
-        className="h-auto w-full max-w-[min(60vh,520px)] rounded-2xl ring-1 ring-slate-200"
-      />
+      <div className="relative">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={qr}
+          alt="Código QR"
+          className={`h-auto w-full max-w-[min(60vh,520px)] rounded-2xl ring-1 ring-slate-200 ${
+            activo ? '' : 'opacity-20 grayscale'
+          }`}
+        />
+        {!activo && (
+          <div className="absolute inset-0 flex items-center justify-center px-4">
+            <span className="rounded-2xl bg-slate-900/90 px-6 py-4 text-center text-xl font-bold text-white">
+              Todavía no está habilitada
+              <span className="mt-1 block text-base font-normal">
+                Actívela en el panel y esta pantalla se actualiza sola
+              </span>
+            </span>
+          </div>
+        )}
+      </div>
 
       <p className="mt-6 max-w-2xl text-center text-xl font-medium text-slate-700 lg:text-2xl">
         {t.instruccion}
@@ -97,6 +127,25 @@ export default function PantallaQR({
           </p>
         </div>
       )}
+
+      {/* Cambiar de QR sin salir de la proyección: en sala se pasa de la
+          asistencia a la evaluación y de ahí a la encuesta, y bajar a buscar el
+          panel con el proyector encendido es justo lo que no se puede hacer. */}
+      <nav className="no-imprimir mt-8 flex flex-wrap items-center justify-center gap-2">
+        {(['asistencia', 'evaluacion', 'encuesta'] as const).map((k) => (
+          <Link
+            key={k}
+            href={`/sesiones/${sesionId}/qr?tipo=${k}`}
+            className={`rounded-xl px-5 py-2.5 text-base font-semibold transition ${
+              proposito === k
+                ? 'bg-slate-900 text-white'
+                : 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            {ETIQUETAS[k]}
+          </Link>
+        ))}
+      </nav>
     </div>
   )
 }

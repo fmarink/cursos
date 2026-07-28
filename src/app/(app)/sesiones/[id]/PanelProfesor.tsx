@@ -75,6 +75,15 @@ type Props = {
 const PESTANAS = ['asistencia', 'conciliacion', 'contenidos', 'cierre'] as const
 type Pestana = (typeof PESTANAS)[number]
 
+// El botón de proyectar dice qué va a proyectar. Antes decía siempre
+// "Proyectar QR" y siempre mandaba el de asistencia, aunque el relator
+// estuviera mirando el de la evaluación.
+const ETIQUETA_QR: Record<'asistencia' | 'evaluacion' | 'encuesta', string> = {
+  asistencia: 'asistencia',
+  evaluacion: 'evaluación',
+  encuesta: 'encuesta',
+}
+
 export default function PanelProfesor(props: Props) {
   const [vivo, setVivo] = useState<EstadoVivo>(props.estadoInicial)
   const [pestana, setPestana] = useState<Pestana>('asistencia')
@@ -183,11 +192,11 @@ export default function PanelProfesor(props: Props) {
                   Modo tablet
                 </Link>
                 <Link
-                  href={`/sesiones/${props.sesionId}/qr`}
+                  href={`/sesiones/${props.sesionId}/qr?tipo=${qrVisible}`}
                   target="_blank"
                   className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
-                  Proyectar QR
+                  Proyectar {ETIQUETA_QR[qrVisible]}
                 </Link>
                 <BotonCerrar
                   resumen={vivo.resumen}
@@ -272,6 +281,7 @@ export default function PanelProfesor(props: Props) {
               evaluacion: vivo.evaluacionAbierta,
               encuesta: vivo.encuestaAbierta,
             }}
+            sesionId={props.sesionId}
           />
           <TablaRegistros
             registros={vivo.registros}
@@ -413,6 +423,7 @@ function PanelQR({
   visible,
   setVisible,
   estados,
+  sesionId,
 }: {
   qr: Props['qr']
   urls: Props['urls']
@@ -420,6 +431,7 @@ function PanelQR({
   visible: 'asistencia' | 'evaluacion' | 'encuesta'
   setVisible: (v: 'asistencia' | 'evaluacion' | 'encuesta') => void
   estados: { asistencia: boolean; evaluacion: boolean; encuesta: boolean }
+  sesionId: string
 }) {
   const [copiado, setCopiado] = useState(false)
 
@@ -474,16 +486,25 @@ function PanelQR({
       >
         {urls[visible]}
       </p>
-      <button
-        onClick={() => {
-          navigator.clipboard?.writeText(urls[visible])
-          setCopiado(true)
-          setTimeout(() => setCopiado(false), 1800)
-        }}
-        className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-      >
-        {copiado ? 'Enlace copiado' : 'Copiar enlace'}
-      </button>
+      <div className="mt-2 flex gap-2">
+        <button
+          onClick={() => {
+            navigator.clipboard?.writeText(urls[visible])
+            setCopiado(true)
+            setTimeout(() => setCopiado(false), 1800)
+          }}
+          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          {copiado ? 'Enlace copiado' : 'Copiar enlace'}
+        </button>
+        <Link
+          href={`/sesiones/${sesionId}/qr?tipo=${visible}`}
+          target="_blank"
+          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-center text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          Proyectar
+        </Link>
+      </div>
     </div>
   )
 }
