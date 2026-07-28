@@ -28,7 +28,9 @@ import {
   uniqueIndex,
   varchar,
 } from 'drizzle-orm/pg-core'
-import { createId } from '@/lib/ids'
+// Import relativo a propósito: este módulo lo cargan también los scripts
+// (migraciones, seed, importador) fuera del resolutor de alias de Next.
+import { createId } from '../lib/ids'
 
 const id = () =>
   varchar('id', { length: 30 })

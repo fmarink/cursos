@@ -46,7 +46,9 @@ ENV PORT=3000
 COPY --from=deps  /app/node_modules ./node_modules
 COPY --from=build /app/.next        ./.next
 COPY --from=build /app/public       ./public
-COPY package.json drizzle.config.ts next.config.ts ./
+# tsconfig.json es necesario en ejecución: los scripts de mantenimiento
+# (migraciones, seed, crear-admin, importador) corren con tsx.
+COPY package.json tsconfig.json drizzle.config.ts next.config.ts ./
 COPY drizzle ./drizzle
 COPY scripts ./scripts
 COPY src     ./src
