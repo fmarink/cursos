@@ -1,0 +1,55 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-marca-50: #eef4ff;
+  --color-marca-100: #d9e6ff;
+  --color-marca-200: #bcd3ff;
+  --color-marca-300: #8eb6ff;
+  --color-marca-400: #598eff;
+  --color-marca-500: #3366f2;
+  --color-marca-600: #1f47d8;
+  --color-marca-700: #1a37ae;
+  --color-marca-800: #1b318a;
+  --color-marca-900: #1c2f6d;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Alto contraste y objetivos táctiles grandes: la app se usa en sala,
+   con luz variable y a veces con guantes. */
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+}
+
+/* Evita el zoom automático de iOS al enfocar un input (fuente < 16px). */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+/* Impide el scroll con gestos sobre el canvas de firma. */
+.canvas-firma {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+@media print {
+  .no-imprimir {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+  .salto-pagina {
+    break-before: page;
+  }
+  .evitar-corte {
+    break-inside: avoid;
+  }
+}

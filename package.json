@@ -1,0 +1,50 @@
+{
+  "name": "uppercap-asistencia",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed": "tsx scripts/seed.ts",
+    "db:reset": "tsx scripts/reset.ts",
+    "import:profesores": "tsx scripts/import-profesores.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
+    "jose": "^6.2.4",
+    "next": "^15.5.22",
+    "pg": "^8.22.0",
+    "puppeteer-core": "^25.4.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^26.1.1",
+    "@types/pg": "^8.20.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "drizzle-kit": "^0.31.10",
+    "exceljs": "^4.4.0",
+    "playwright": "^1.62.0",
+    "postcss": "^8.5.23",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.1",
+    "typescript": "5.9"
+  },
+  "private": true
+}

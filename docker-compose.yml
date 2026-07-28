@@ -1,0 +1,49 @@
+# Levanta la plataforma completa sin instalar nada en el equipo.
+#
+#   docker compose up -d --build     iniciar
+#   docker compose logs -f app       ver los registros
+#   docker compose down              detener (los datos se conservan)
+#   docker compose down -v           detener y borrar los datos
+#
+# Después de la primera vez, cargue los datos de prueba con:
+#   docker compose exec app npx tsx scripts/seed.ts
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: uppercap-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: uppercap
+      POSTGRES_PASSWORD: uppercap
+      POSTGRES_DB: uppercap
+    ports:
+      - "5432:5432"
+    volumes:
+      - datos:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U uppercap"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    container_name: uppercap-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://uppercap:uppercap@db:5432/uppercap"
+      # Cámbielo por un valor propio antes de usarlo en producción.
+      SESSION_SECRET: "cambie-este-secreto-por-uno-aleatorio-de-al-menos-32-caracteres"
+      # Uso interno del servidor. La dirección de los QR se detecta sola
+      # desde el navegador, así que no hay que tocar nada al cambiar de red.
+      APP_URL: "http://localhost:3000"
+      CORREO_PROVEEDOR: "consola"
+    ports:
+      - "3000:3000"
+
+volumes:
+  datos:
