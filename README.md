@@ -109,7 +109,44 @@ npm run typecheck            # verificación de tipos
 node scripts/prueba-e2e.mjs  # prueba de aceptación end-to-end
 node scripts/prueba-carga-archivo.mjs   # prueba de la carga de preguntas por archivo
 node scripts/prueba-qr.mjs              # prueba de la proyección de los tres QR
+node scripts/prueba-cargas.mjs          # prueba de las cargas por archivo
 ```
+
+### Cargar datos desde un archivo
+
+Casi todo el catálogo se puede cargar con un Excel en vez de escribirlo a mano.
+En cada pantalla hay un botón **Cargar … desde archivo** que descarga una
+plantilla ya armada y acepta de vuelta `.xlsx` o `.csv`:
+
+| Qué | Dónde | Se identifica por |
+|---|---|---|
+| Relatores | Profesores | RUT, o nombre si no trae RUT |
+| Clientes | Clientes y lugares | Razón social |
+| Lugares | Clientes y lugares | Nombre + cliente |
+| Programa de contenidos | Tipos de curso → Programa | — |
+| Contenidos de una jornada | Panel de la sesión → Contenidos | — |
+| Evaluaciones | Plantillas | — |
+| Encuestas | Plantillas | — |
+
+Las columnas se reconocen **por el texto del encabezado**, tolerando acentos,
+mayúsculas y sinónimos (`fono`/`teléfono`/`celular`, `correo`/`email`/`mail`),
+así que también sirve el Excel que la empresa ya tenía, con sus columnas en
+otro orden. Los encabezados que no se reconocen se listan en pantalla en vez de
+descartarse en silencio.
+
+**Nada se guarda hasta confirmar.** Primero se muestra fila por fila lo que el
+sistema entendió y qué filas tienen problemas, con el **número de fila real de
+la planilla**. Las filas con problemas no se cargan; el resto sí. Volver a
+cargar el mismo archivo actualiza los registros existentes en vez de
+duplicarlos.
+
+### Programa de contenidos por tipo de curso
+
+En **Tipos de curso** cada curso puede tener su programa: el temario habitual,
+cargado una sola vez. En la jornada, el relator pulsa **Aplicar el programa del
+curso** en la pestaña Contenidos y los bloques se copian a esa sesión. Es una
+copia, no una referencia: el relator ajusta lo que realmente se dictó ese día
+sin tocar el programa estándar, y el expediente refleja la jornada real.
 
 ### Proyectar los QR en sala
 

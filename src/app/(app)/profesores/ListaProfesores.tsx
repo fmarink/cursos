@@ -2,7 +2,25 @@
 
 import { useMemo, useState, useTransition } from 'react'
 import CampoRut from '@/components/CampoRut'
-import { alternarActivoProfesor, guardarProfesor } from './acciones'
+import CargaDesdeArchivo from '@/components/CargaDesdeArchivo'
+import {
+  alternarActivoProfesor,
+  analizarArchivoRelatores,
+  cargarRelatores,
+  guardarProfesor,
+} from './acciones'
+
+type RelatorLeido = {
+  fila: number
+  nombre: string
+  rut: string
+  telefono: string
+  email: string
+  direccion: string
+  comuna: string
+  materias: string[]
+  notas: string
+}
 
 type Profesor = {
   id: string
@@ -65,6 +83,15 @@ export default function ListaProfesores({
             </option>
           ))}
         </select>
+        <CargaDesdeArchivo<RelatorLeido>
+          titulo="Cargar relatores desde un archivo"
+          descripcion="Descargue la plantilla, o suba directamente el Excel que ya tiene. Las columnas se reconocen por su encabezado."
+          urlPlantilla="/api/plantillas/relatores"
+          nombre={{ uno: 'relator', varios: 'relatores' }}
+          analizar={analizarArchivoRelatores}
+          confirmar={(filas) => cargarRelatores(filas)}
+          fila={FilaRelator}
+        />
         <button
           onClick={() => setEditando(editando === 'nuevo' ? null : 'nuevo')}
           className="rounded-xl bg-marca-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-marca-700"
@@ -282,3 +309,18 @@ function Formulario({
 
 const ESTILO =
   'w-full rounded-lg border-2 border-slate-300 px-3 py-2.5 outline-none focus:border-marca-500'
+
+function FilaRelator({ dato }: { dato: RelatorLeido }) {
+  const secundario = [dato.rut, dato.telefono, dato.email, dato.comuna]
+    .filter((x) => x !== '')
+    .join(' · ')
+  return (
+    <>
+      <p className="text-sm font-medium text-slate-800">{dato.nombre}</p>
+      {secundario && <p className="text-xs text-slate-500">{secundario}</p>}
+      {dato.materias.length > 0 && (
+        <p className="text-xs text-slate-500">Materias: {dato.materias.join(', ')}</p>
+      )}
+    </>
+  )
+}

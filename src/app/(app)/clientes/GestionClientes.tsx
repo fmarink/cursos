@@ -2,7 +2,41 @@
 
 import { useState, useTransition } from 'react'
 import CampoRut from '@/components/CampoRut'
-import { desactivarLugar, guardarCliente, guardarLugar } from './acciones'
+import CargaDesdeArchivo from '@/components/CargaDesdeArchivo'
+import {
+  analizarArchivoClientes,
+  analizarArchivoLugares,
+  cargarClientes,
+  cargarLugares,
+  desactivarLugar,
+  guardarCliente,
+  guardarLugar,
+} from './acciones'
+
+type ClienteLeido = {
+  fila: number
+  razonSocial: string
+  rut: string
+  contactoNombre: string
+  contactoEmail: string
+  contactoTelefono: string
+}
+
+type LugarLeido = {
+  fila: number
+  nombre: string
+  tipo: 'FAENA' | 'HOTEL' | 'OFICINA' | 'OTRO'
+  direccion: string
+  comuna: string
+  cliente: string
+}
+
+const NOMBRE_TIPO: Record<string, string> = {
+  FAENA: 'Faena',
+  HOTEL: 'Hotel',
+  OFICINA: 'Oficina',
+  OTRO: 'Otro',
+}
 
 type Cliente = {
   id: string
@@ -37,12 +71,34 @@ export default function GestionClientes({
 
   return (
     <div className="space-y-4">
-      <button
-        onClick={() => setEditando(editando === 'nuevo' ? null : 'nuevo')}
-        className="rounded-xl bg-marca-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-marca-700"
-      >
-        {editando === 'nuevo' ? 'Cancelar' : 'Nuevo cliente'}
-      </button>
+      <div className="flex flex-wrap items-start gap-2">
+        <button
+          onClick={() => setEditando(editando === 'nuevo' ? null : 'nuevo')}
+          className="rounded-xl bg-marca-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-marca-700"
+        >
+          {editando === 'nuevo' ? 'Cancelar' : 'Nuevo cliente'}
+        </button>
+        <CargaDesdeArchivo<ClienteLeido>
+          titulo="Cargar clientes desde un archivo"
+          descripcion="Un cliente por fila. Se reconocen por razón social: volver a cargar el mismo archivo actualiza sus datos, no los duplica."
+          etiquetaBoton="Cargar clientes desde archivo"
+          urlPlantilla="/api/plantillas/clientes"
+          nombre={{ uno: 'cliente', varios: 'clientes' }}
+          analizar={analizarArchivoClientes}
+          confirmar={(filas) => cargarClientes(filas)}
+          fila={FilaCliente}
+        />
+        <CargaDesdeArchivo<LugarLeido>
+          titulo="Cargar lugares desde un archivo"
+          descripcion="Faenas, hoteles y oficinas. La columna Cliente debe calzar con un cliente que ya exista; déjela vacía para un lugar general."
+          etiquetaBoton="Cargar lugares desde archivo"
+          urlPlantilla="/api/plantillas/lugares"
+          nombre={{ uno: 'lugar', varios: 'lugares' }}
+          analizar={analizarArchivoLugares}
+          confirmar={(filas) => cargarLugares(filas)}
+          fila={FilaLugar}
+        />
+      </div>
 
       {error && (
         <div className="rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
@@ -318,3 +374,31 @@ function FormularioLugar({
 
 const ESTILO =
   'w-full rounded-lg border-2 border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-marca-500'
+
+function FilaCliente({ dato }: { dato: ClienteLeido }) {
+  const secundario = [dato.rut, dato.contactoNombre, dato.contactoEmail, dato.contactoTelefono]
+    .filter((x) => x !== '')
+    .join(' · ')
+  return (
+    <>
+      <p className="text-sm font-medium text-slate-800">{dato.razonSocial}</p>
+      {secundario && <p className="text-xs text-slate-500">{secundario}</p>}
+    </>
+  )
+}
+
+function FilaLugar({ dato }: { dato: LugarLeido }) {
+  const secundario = [dato.direccion, dato.comuna].filter((x) => x !== '').join(', ')
+  return (
+    <>
+      <p className="text-sm font-medium text-slate-800">
+        {dato.nombre}{' '}
+        <span className="font-normal text-slate-500">· {NOMBRE_TIPO[dato.tipo]}</span>
+      </p>
+      <p className="text-xs text-slate-500">
+        {dato.cliente !== '' ? dato.cliente : 'Lugar general, sin cliente'}
+        {secundario && ` · ${secundario}`}
+      </p>
+    </>
+  )
+}

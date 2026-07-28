@@ -1,7 +1,33 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { alternarActivoTipoCurso, guardarTipoCurso } from './acciones'
+import CargaDesdeArchivo from '@/components/CargaDesdeArchivo'
+import {
+  alternarActivoTipoCurso,
+  analizarArchivoPrograma,
+  cargarPrograma,
+  guardarTipoCurso,
+  vaciarPrograma,
+} from './acciones'
+
+export type BloqueProgramaVista = {
+  id: string
+  orden: number
+  tema: string
+  actividades: string
+  horaInicio: string
+  horaFin: string
+  observaciones: string
+}
+
+type ContenidoLeido = {
+  fila: number
+  tema: string
+  actividades: string
+  horaInicio: string
+  horaFin: string
+  observaciones: string
+}
 
 type TipoCurso = {
   id: string
@@ -16,7 +42,14 @@ type TipoCurso = {
   totalRelatores: number
 }
 
-export default function ListaTiposCurso({ tipos }: { tipos: TipoCurso[] }) {
+export default function ListaTiposCurso({
+  tipos,
+  programas,
+}: {
+  tipos: TipoCurso[]
+  /** Bloques del programa por tipo de curso. */
+  programas: Record<string, BloqueProgramaVista[]>
+}) {
   const [editando, setEditando] = useState<string | 'nuevo' | null>(
     tipos.length === 0 ? 'nuevo' : null,
   )
@@ -139,9 +172,119 @@ export default function ListaTiposCurso({ tipos }: { tipos: TipoCurso[] }) {
               </div>
             </div>
           )}
+
+          {editando !== t.id && (
+            <Programa tipo={t} bloques={programas[t.id] ?? []} onError={setError} />
+          )}
         </div>
       ))}
     </div>
+  )
+}
+
+/**
+ * El programa del tipo de curso: el temario habitual, cargado una sola vez.
+ *
+ * En cada jornada el relator lo aplica con un botón desde el panel y solo
+ * ajusta lo que cambió, en vez de reescribir el temario completo cada curso.
+ */
+function Programa({
+  tipo,
+  bloques,
+  onError,
+}: {
+  tipo: TipoCurso
+  bloques: BloqueProgramaVista[]
+  onError: (m: string | null) => void
+}) {
+  const [abierto, setAbierto] = useState(false)
+  const [, iniciar] = useTransition()
+
+  return (
+    <div className="mt-4 border-t border-slate-100 pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button
+          onClick={() => setAbierto(!abierto)}
+          className="text-sm font-semibold text-slate-700 hover:text-marca-700"
+        >
+          {abierto ? '▾' : '▸'} Programa de contenidos
+          <span className="ml-1 font-normal text-slate-500">
+            {bloques.length === 0
+              ? '— sin cargar'
+              : `— ${bloques.length} bloque${bloques.length === 1 ? '' : 's'}`}
+          </span>
+        </button>
+        {abierto && bloques.length > 0 && (
+          <button
+            onClick={() =>
+              iniciar(async () => {
+                onError(null)
+                const r = await vaciarPrograma(tipo.id)
+                if (!r.ok) onError(r.error ?? 'No se pudo vaciar el programa.')
+              })
+            }
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
+          >
+            Vaciar programa
+          </button>
+        )}
+      </div>
+
+      {abierto && (
+        <div className="mt-3 space-y-3">
+          {bloques.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              Sin programa cargado. Con uno, el relator lo aplica a su jornada con un botón en vez
+              de escribir el temario a mano cada vez.
+            </p>
+          ) : (
+            <ol className="space-y-1.5">
+              {bloques.map((b, i) => (
+                <li key={b.id} className="flex items-start gap-3 text-sm">
+                  <span className="mt-0.5 w-5 shrink-0 tabular-nums text-slate-400">{i + 1}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-slate-800">{b.tema}</p>
+                    <p className="text-xs text-slate-500">
+                      {b.horaInicio && b.horaFin ? `${b.horaInicio}–${b.horaFin}` : 'Sin horario'}
+                      {b.actividades && ` · ${b.actividades}`}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+
+          <CargaDesdeArchivo<ContenidoLeido>
+            titulo={`Programa de «${tipo.nombre}»`}
+            descripcion="Un bloque de contenido por fila, en el orden en que se dicta. El horario puede ir vacío si cambia en cada jornada."
+            etiquetaBoton={bloques.length === 0 ? 'Cargar programa desde archivo' : 'Cargar otro archivo'}
+            urlPlantilla="/api/plantillas/contenidos"
+            nombre={{ uno: 'bloque', varios: 'bloques' }}
+            analizar={analizarArchivoPrograma}
+            confirmar={(filas, modo) => cargarPrograma(tipo.id, filas, modo)}
+            fila={FilaContenido}
+            existentes={bloques.length}
+            textoReemplazar="Borrarlos y dejar solo el programa del archivo"
+            compacto
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function FilaContenido({ dato }: { dato: ContenidoLeido }) {
+  return (
+    <>
+      <p className="text-sm font-medium text-slate-800">{dato.tema}</p>
+      <p className="text-xs text-slate-500">
+        {dato.horaInicio && dato.horaFin ? `${dato.horaInicio}–${dato.horaFin}` : 'Sin horario'}
+        {dato.actividades && ` · ${dato.actividades}`}
+      </p>
+      {dato.observaciones && (
+        <p className="text-xs italic text-slate-400">{dato.observaciones}</p>
+      )}
+    </>
   )
 }
 

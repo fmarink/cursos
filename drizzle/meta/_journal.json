@@ -15,6 +15,13 @@
       "when": 1785188980003,
       "tag": "0001_whole_living_lightning",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785219186635,
+      "tag": "0002_wooden_nightcrawler",
+      "breakpoints": true
     }
   ]
 }

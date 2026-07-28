@@ -3,7 +3,13 @@ import { notFound } from 'next/navigation'
 import { eq } from 'drizzle-orm'
 import QRCode from 'qrcode'
 import { db } from '@/db'
-import { adjuntos, expedientes, plantillasEvaluacion, plantillasEncuesta } from '@/db/schema'
+import {
+  adjuntos,
+  bloquesPrograma,
+  expedientes,
+  plantillasEvaluacion,
+  plantillasEncuesta,
+} from '@/db/schema'
 import { sesionActual } from '@/lib/auth'
 import { contenidosDeSesion, encuestasDeSesion, registrosDeSesion, resumir } from '@/lib/registros'
 import { nombreLugar, sesionConContexto } from '@/lib/sesiones'
@@ -35,16 +41,29 @@ export default async function PaginaSesion({ params }: { params: Promise<{ id: s
     QRCode.toDataURL(urlEncuesta, { width: 520, margin: 1, errorCorrectionLevel: 'M' }),
   ])
 
-  const [registros, contenidos, encuestas, fotos, expedientesSesion, plantillasEval, plantillasEnc] =
-    await Promise.all([
-      registrosDeSesion(id, ctx.curso.id),
-      contenidosDeSesion(id),
-      encuestasDeSesion(id),
-      db.select().from(adjuntos).where(eq(adjuntos.sesionId, id)),
-      db.select().from(expedientes).where(eq(expedientes.sesionId, id)),
-      db.select().from(plantillasEvaluacion).where(eq(plantillasEvaluacion.activa, true)),
-      db.select().from(plantillasEncuesta).where(eq(plantillasEncuesta.activa, true)),
-    ])
+  const [
+    registros,
+    contenidos,
+    encuestas,
+    fotos,
+    expedientesSesion,
+    plantillasEval,
+    plantillasEnc,
+    programa,
+  ] = await Promise.all([
+    registrosDeSesion(id, ctx.curso.id),
+    contenidosDeSesion(id),
+    encuestasDeSesion(id),
+    db.select().from(adjuntos).where(eq(adjuntos.sesionId, id)),
+    db.select().from(expedientes).where(eq(expedientes.sesionId, id)),
+    db.select().from(plantillasEvaluacion).where(eq(plantillasEvaluacion.activa, true)),
+    db.select().from(plantillasEncuesta).where(eq(plantillasEncuesta.activa, true)),
+    db
+      .select({ id: bloquesPrograma.id })
+      .from(bloquesPrograma)
+      .where(eq(bloquesPrograma.tipoCursoId, ctx.curso.tipoCursoId))
+      .limit(1),
+  ])
 
   const resumen = resumir(registros, ctx.curso.nominaEsperada)
 
@@ -91,6 +110,7 @@ export default async function PaginaSesion({ params }: { params: Promise<{ id: s
         urls={{ asistencia: urlAsistencia, evaluacion: urlEvaluacion, encuesta: urlEncuesta }}
         qrAlcanzable={qrEsAlcanzableDesdeCelular(base)}
         contenidos={contenidos}
+        hayPrograma={programa.length > 0}
         fotos={fotos.map((f) => ({ id: f.id, tipo: f.tipo, nombre: f.nombre, datos: f.datos }))}
         encuestasRecibidas={encuestas.length}
         expedienteGenerado={expedientesSesion.length > 0}

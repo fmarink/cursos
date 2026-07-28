@@ -1,6 +1,6 @@
 import { asc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
-import { cursos, profesorMaterias, tiposCurso } from '@/db/schema'
+import { bloquesPrograma, cursos, profesorMaterias, tiposCurso } from '@/db/schema'
 import { requerirRol } from '@/lib/auth'
 import ListaTiposCurso from './ListaTiposCurso'
 
@@ -9,16 +9,40 @@ export const dynamic = 'force-dynamic'
 export default async function PaginaTiposCurso() {
   await requerirRol('ADMIN', 'OPERACIONES')
 
-  const lista = await db
-    .select({
+  const [lista, programa] = await Promise.all([
+    db
+      .select({
       tipo: tiposCurso,
       totalCursos: sql<number>`(select count(*)::int from ${cursos}
         where ${cursos.tipoCursoId} = ${tiposCurso.id})`,
       totalRelatores: sql<number>`(select count(*)::int from ${profesorMaterias}
         where ${profesorMaterias.tipoCursoId} = ${tiposCurso.id})`,
+      })
+      .from(tiposCurso)
+      .orderBy(asc(tiposCurso.nombre)),
+    db.select().from(bloquesPrograma).orderBy(asc(bloquesPrograma.orden)),
+  ])
+
+  const programas: Record<string, {
+    id: string
+    orden: number
+    tema: string
+    actividades: string
+    horaInicio: string
+    horaFin: string
+    observaciones: string
+  }[]> = {}
+  for (const b of programa) {
+    ;(programas[b.tipoCursoId] ??= []).push({
+      id: b.id,
+      orden: b.orden,
+      tema: b.tema,
+      actividades: b.actividades ?? '',
+      horaInicio: b.horaInicio ?? '',
+      horaFin: b.horaFin ?? '',
+      observaciones: b.observaciones ?? '',
     })
-    .from(tiposCurso)
-    .orderBy(asc(tiposCurso.nombre))
+  }
 
   return (
     <div>
@@ -43,6 +67,7 @@ export default async function PaginaTiposCurso() {
           totalCursos: f.totalCursos,
           totalRelatores: f.totalRelatores,
         }))}
+        programas={programas}
       />
     </div>
   )

@@ -1,13 +1,14 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { and, count, eq, ne, sql } from 'drizzle-orm'
+import { and, asc, count, eq, ne, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/db'
 import {
   adjuntos,
   asistencias,
   bloquesContenido,
+  bloquesPrograma,
   cursos,
   nominaItems,
   participantes,
@@ -677,6 +678,149 @@ export async function registrarDesdeNomina(
     ip: await ipCliente(),
   })
 
+  refrescar(sesionId)
+  return { ok: true }
+}
+
+// ---------------------------------------------------------------------------
+// Contenidos por archivo y programa del tipo de curso
+// ---------------------------------------------------------------------------
+
+export async function analizarArchivoContenidos(sesionId: string, formData: FormData) {
+  await contexto(sesionId)
+  const archivo = formData.get('archivo')
+  if (!(archivo instanceof File) || archivo.size === 0) {
+    return { ok: false as const, error: 'Seleccione un archivo.' }
+  }
+  if (archivo.size > 5_000_000) return { ok: false as const, error: 'El archivo supera los 5 MB.' }
+  try {
+    const { analizarContenidos } = await import('@/lib/cargas')
+    const buffer = Buffer.from(await archivo.arrayBuffer())
+    return { ok: true as const, ...(await analizarContenidos(buffer, archivo.name)) }
+  } catch {
+    return { ok: false as const, error: 'No se pudo leer el archivo. Debe ser .xlsx o .csv.' }
+  }
+}
+
+const LoteContenidos = z
+  .array(
+    z.object({
+      tema: z.string().trim().min(3).max(300),
+      actividades: z.string().trim().max(600).default(''),
+      horaInicio: z.string().trim().max(5).default(''),
+      horaFin: z.string().trim().max(5).default(''),
+      observaciones: z.string().trim().max(600).default(''),
+    }),
+  )
+  .min(1, 'No hay bloques que cargar.')
+  .max(200, 'Demasiadas filas en un solo archivo.')
+
+export async function cargarContenidos(
+  sesionId: string,
+  datos: unknown,
+  modo: 'AGREGAR' | 'REEMPLAZAR',
+): Promise<Resultado> {
+  const { usuario, sesion } = await contexto(sesionId)
+  if (sesion.estado === 'CERRADA') {
+    return { ok: false, error: 'La sesión está cerrada. Reábrala para modificar los contenidos.' }
+  }
+  const parsed = LoteContenidos.safeParse(datos)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message }
+  const lote = parsed.data
+
+  if (modo === 'REEMPLAZAR') {
+    await db.delete(bloquesContenido).where(eq(bloquesContenido.sesionId, sesionId))
+  }
+
+  const [{ total }] = await db
+    .select({ total: count() })
+    .from(bloquesContenido)
+    .where(eq(bloquesContenido.sesionId, sesionId))
+
+  let orden = total
+  await db.insert(bloquesContenido).values(
+    lote.map((b) => ({
+      sesionId,
+      orden: orden++,
+      tema: b.tema,
+      actividades: b.actividades || null,
+      horaInicio: b.horaInicio,
+      horaFin: b.horaFin,
+      observaciones: b.observaciones || null,
+    })),
+  )
+
+  await auditar({
+    entidad: 'bloque_contenido',
+    entidadId: sesionId,
+    accion: modo === 'REEMPLAZAR' ? 'contenidos_reemplazados_archivo' : 'contenidos_cargados_archivo',
+    valorNuevo: { cantidad: lote.length },
+    usuarioId: usuario.id,
+  })
+  refrescar(sesionId)
+  return { ok: true }
+}
+
+/**
+ * Copia el programa del tipo de curso a esta jornada.
+ *
+ * Es una copia, no una referencia: el relator ajusta los bloques de su jornada
+ * sin tocar el programa estándar, y lo que queda en el expediente es lo que
+ * realmente se dictó ese día.
+ */
+export async function aplicarPrograma(sesionId: string): Promise<Resultado> {
+  const { usuario, sesion } = await contexto(sesionId)
+  if (sesion.estado === 'CERRADA') {
+    return { ok: false, error: 'La sesión está cerrada. Reábrala para modificar los contenidos.' }
+  }
+
+  const [fila] = await db
+    .select({ tipoCursoId: cursos.tipoCursoId })
+    .from(sesiones)
+    .innerJoin(cursos, eq(sesiones.cursoId, cursos.id))
+    .where(eq(sesiones.id, sesionId))
+    .limit(1)
+  if (!fila) return { ok: false, error: 'No se encontró el curso de esta jornada.' }
+
+  const programa = await db
+    .select()
+    .from(bloquesPrograma)
+    .where(eq(bloquesPrograma.tipoCursoId, fila.tipoCursoId))
+    .orderBy(asc(bloquesPrograma.orden))
+
+  if (programa.length === 0) {
+    return {
+      ok: false,
+      error:
+        'Este tipo de curso todavía no tiene programa cargado. Cárguelo en Tipos de curso → Programa.',
+    }
+  }
+
+  const [{ total }] = await db
+    .select({ total: count() })
+    .from(bloquesContenido)
+    .where(eq(bloquesContenido.sesionId, sesionId))
+
+  let orden = total
+  await db.insert(bloquesContenido).values(
+    programa.map((b) => ({
+      sesionId,
+      orden: orden++,
+      tema: b.tema,
+      actividades: b.actividades,
+      horaInicio: b.horaInicio ?? '',
+      horaFin: b.horaFin ?? '',
+      observaciones: b.observaciones,
+    })),
+  )
+
+  await auditar({
+    entidad: 'bloque_contenido',
+    entidadId: sesionId,
+    accion: 'programa_aplicado',
+    valorNuevo: { cantidad: programa.length, tipoCursoId: fila.tipoCursoId },
+    usuarioId: usuario.id,
+  })
   refrescar(sesionId)
   return { ok: true }
 }

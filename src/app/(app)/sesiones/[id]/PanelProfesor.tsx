@@ -7,9 +7,13 @@ import { Estado, ETIQUETA_ESTADO } from '@/components/ui'
 import { formatearRut } from '@/lib/rut'
 import { NIVELES_ESCOLARIDAD } from '@/lib/constantes'
 import type { RegistroSesion } from '@/lib/registros'
+import CargaDesdeArchivo from '@/components/CargaDesdeArchivo'
 import Conciliacion, { type FilaVista } from './Conciliacion'
 import {
   abrirSesion,
+  analizarArchivoContenidos,
+  aplicarPrograma,
+  cargarContenidos,
   agregarManual,
   alternarFlujo,
   alternarPresencia,
@@ -60,6 +64,8 @@ type Props = {
   /** false cuando el panel se abrió desde localhost: el QR no serviría. */
   qrAlcanzable: boolean
   contenidos: Bloque[]
+  /** ¿El tipo de curso tiene programa cargado para aplicar a esta jornada? */
+  hayPrograma: boolean
   fotos: { id: string; tipo: string; nombre: string; datos: string }[]
   encuestasRecibidas: number
   expedienteGenerado: boolean
@@ -311,8 +317,11 @@ export default function PanelProfesor(props: Props) {
 
       {pestana === 'contenidos' && (
         <Contenidos
+          sesionId={props.sesionId}
           bloques={props.contenidos}
           bloqueada={cerrada}
+          hayPrograma={props.hayPrograma}
+          ejecutar={ejecutar}
           onGuardar={(datos, id) =>
             ejecutar(() => guardarBloqueContenido(props.sesionId, datos, id))
           }
@@ -774,14 +783,29 @@ function FormularioParticipante({
 
 // ---------------------------------------------------------------------------
 
+type ContenidoLeido = {
+  fila: number
+  tema: string
+  actividades: string
+  horaInicio: string
+  horaFin: string
+  observaciones: string
+}
+
 function Contenidos({
+  sesionId,
   bloques,
   bloqueada,
+  hayPrograma,
+  ejecutar,
   onGuardar,
   onEliminar,
 }: {
+  sesionId: string
   bloques: Bloque[]
   bloqueada: boolean
+  hayPrograma: boolean
+  ejecutar: (fn: () => Promise<{ ok: boolean; error?: string }>) => void
   onGuardar: (d: Record<string, string>, id?: string) => void
   onEliminar: (id: string) => void
 }) {
@@ -797,14 +821,42 @@ function Contenidos({
           </p>
         </div>
         {!bloqueada && (
-          <button
-            onClick={() => setEditando(editando === 'nuevo' ? null : 'nuevo')}
-            className="shrink-0 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            {editando === 'nuevo' ? 'Cancelar' : '+ Agregar bloque'}
-          </button>
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
+            {hayPrograma && (
+              <button
+                onClick={() => ejecutar(() => aplicarPrograma(sesionId))}
+                className="rounded-lg border border-marca-300 bg-marca-50 px-3 py-1.5 text-sm font-semibold text-marca-800 hover:bg-marca-100"
+              >
+                Aplicar el programa del curso
+              </button>
+            )}
+            <button
+              onClick={() => setEditando(editando === 'nuevo' ? null : 'nuevo')}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              {editando === 'nuevo' ? 'Cancelar' : '+ Agregar bloque'}
+            </button>
+          </div>
         )}
       </div>
+
+      {!bloqueada && (
+        <div className="border-b border-slate-100 px-5 py-3">
+          <CargaDesdeArchivo<ContenidoLeido>
+            titulo="Cargar los contenidos de esta jornada"
+            descripcion="Para cuando el temario de este día fue distinto del programa estándar. Un bloque por fila."
+            etiquetaBoton="Cargar contenidos desde archivo"
+            urlPlantilla="/api/plantillas/contenidos"
+            nombre={{ uno: 'bloque', varios: 'bloques' }}
+            analizar={(fd) => analizarArchivoContenidos(sesionId, fd)}
+            confirmar={(filas, modo) => cargarContenidos(sesionId, filas, modo)}
+            fila={FilaContenidoLeido}
+            existentes={bloques.length}
+            textoReemplazar="Borrarlos y dejar solo los del archivo"
+            compacto
+          />
+        </div>
+      )}
 
       {editando === 'nuevo' && (
         <div className="border-b border-slate-100 bg-slate-50 p-5">
@@ -840,7 +892,7 @@ function Contenidos({
               ) : (
                 <div className="flex items-start gap-4 px-5 py-4">
                   <span className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1 text-sm font-semibold tabular-nums text-slate-700">
-                    {b.horaInicio}–{b.horaFin}
+                    {b.horaInicio && b.horaFin ? `${b.horaInicio}–${b.horaFin}` : 'Sin horario'}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-slate-900">{b.tema}</p>
@@ -1213,4 +1265,17 @@ async function comprimirImagen(archivo: File, maxLado = 1600, calidad = 0.82): P
   const ctx = canvas.getContext('2d')!
   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
   return canvas.toDataURL('image/jpeg', calidad)
+}
+
+function FilaContenidoLeido({ dato }: { dato: ContenidoLeido }) {
+  return (
+    <>
+      <p className="text-sm font-medium text-slate-800">{dato.tema}</p>
+      <p className="text-xs text-slate-500">
+        {dato.horaInicio && dato.horaFin ? `${dato.horaInicio}–${dato.horaFin}` : 'Sin horario'}
+        {dato.actividades && ` · ${dato.actividades}`}
+      </p>
+      {dato.observaciones && <p className="text-xs italic text-slate-400">{dato.observaciones}</p>}
+    </>
+  )
 }

@@ -590,9 +590,40 @@ export const lugaresRel = relations(lugares, ({ one, many }) => ({
   cursos: many(cursos),
 }))
 
+/**
+ * El programa del tipo de curso: los bloques de contenido que se dictan
+ * habitualmente. Se carga una vez y en cada jornada se copia a la sesión con un
+ * botón, para que el relator solo ajuste lo que cambió en vez de reescribir el
+ * temario completo cada vez.
+ */
+export const bloquesPrograma = pgTable(
+  'bloques_programa',
+  {
+    id: id(),
+    orden: integer('orden').notNull().default(0),
+    tema: text('tema').notNull(),
+    actividades: text('actividades'),
+    horaInicio: text('hora_inicio'),
+    horaFin: text('hora_fin'),
+    observaciones: text('observaciones'),
+    tipoCursoId: varchar('tipo_curso_id', { length: 30 })
+      .notNull()
+      .references(() => tiposCurso.id, { onDelete: 'cascade' }),
+  },
+  (t) => [index('bloques_programa_tipo_idx').on(t.tipoCursoId)],
+)
+
 export const tiposCursoRel = relations(tiposCurso, ({ many }) => ({
   cursos: many(cursos),
   materias: many(profesorMaterias),
+  programa: many(bloquesPrograma),
+}))
+
+export const bloquesProgramaRel = relations(bloquesPrograma, ({ one }) => ({
+  tipoCurso: one(tiposCurso, {
+    fields: [bloquesPrograma.tipoCursoId],
+    references: [tiposCurso.id],
+  }),
 }))
 
 export const profesoresRel = relations(profesores, ({ many }) => ({
