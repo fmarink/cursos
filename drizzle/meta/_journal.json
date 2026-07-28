@@ -8,6 +8,13 @@
       "when": 1785170074322,
       "tag": "0000_lovely_eddie_brock",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785188980003,
+      "tag": "0001_whole_living_lightning",
+      "breakpoints": true
     }
   ]
 }

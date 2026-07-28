@@ -5,6 +5,11 @@
 
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
+# Playwright solo se usa en la prueba de aceptación, nunca en producción.
+# Sin esto, npm ci intentaría descargar navegadores y alargaría el build
+# varios minutos, o lo haría fallar sin acceso a internet.
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PUPPETEER_SKIP_DOWNLOAD=1
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
@@ -23,14 +28,13 @@ RUN npm run build
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 
+# chromium arrastra sus propias dependencias: listarlas a mano rompe el build
+# cada vez que Debian renombra una librería.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       chromium \
       fonts-liberation \
       fonts-dejavu-core \
       ca-certificates \
-      libnss3 libatk-bridge2.0-0 libatk1.0-0 libcups2 libdrm2 \
-      libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
-      libgbm1 libpango-1.0-0 libcairo2 libasound2 \
  && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production
@@ -49,6 +53,10 @@ COPY src     ./src
 
 EXPOSE 3000
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3000/api/salud').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 # Aplica migraciones pendientes y arranca. Es idempotente: si el esquema ya
-# está al día, no hace nada.
+# está al día, no hace nada. Si las migraciones fallan, el contenedor no
+# arranca — es preferible a servir una aplicación contra un esquema viejo.
 CMD ["sh", "-c", "npx tsx scripts/migrate.ts && npx next start --hostname 0.0.0.0 --port 3000"]

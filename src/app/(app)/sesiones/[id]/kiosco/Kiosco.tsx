@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import FormularioAsistencia from '@/app/a/[token]/FormularioAsistencia'
+import FormularioAsistencia, { type AlumnoEnLista } from '@/app/a/[token]/FormularioAsistencia'
 
 /**
  * Envoltorio de pantalla completa para la tablet.
@@ -23,6 +23,7 @@ export default function Kiosco({
   cliente,
   lugar,
   relator,
+  lista,
 }: {
   sesionId: string
   token: string
@@ -32,6 +33,7 @@ export default function Kiosco({
   cliente: string
   lugar: string
   relator: string | null
+  lista: AlumnoEnLista[]
 }) {
   const router = useRouter()
   const [confirmandoSalida, setConfirmandoSalida] = useState(false)
@@ -161,6 +163,7 @@ export default function Kiosco({
           habilitado={habilitado}
           estadoSesion={estadoSesion}
           modoKiosco
+          lista={lista}
         />
       </main>
     </div>

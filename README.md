@@ -31,6 +31,7 @@ y completo al cerrar la sesión.
 | Antecedentes participantes | `participantes` (RUT, escolaridad, empresa, cargo) |
 | Contenidos de actividades de capacitación | `bloques_contenido` |
 | Evaluaciones | `evaluaciones` + `plantillas_evaluacion` |
+| Nómina enviada por el cliente | `nomina_items`, vinculada desde `participantes.nomina_item_id` |
 
 Una fila del control de asistencia es un `participante`; cada par
 FECHA + FIRMA es una `asistencia` con su `firma`. Por eso un curso de 16 horas
@@ -156,6 +157,16 @@ conservarse.
 
 ## Decisiones de diseño
 
+**Un solo QR para toda la sala, y la lista dentro.** Al escanear, el
+participante ve la lista del curso y toca su nombre: el RUT ya viene de la
+nómina, así que no lo escribe nadie y no hay errores de tipeo que corregir
+después. Quien no aparezca escribe sus datos y entra igual, marcado para
+revisión. Así el vínculo entre "quién debía venir" y "quién firmó" queda hecho
+en el momento, y el instructor solo resuelve las excepciones.
+
+Al navegador viaja **solo el nombre**, nunca el RUT: cualquiera con el QR ve esa
+lista, y el nombre basta para que una persona se reconozca.
+
 **El registro es abierto, la validación es posterior.** No se bloquea a nadie
 por conciliación. Si en un curso de 10 personas se registran 11, el registro
 sobrante se acepta y queda marcado `EXCEDE_NOMINA` para que el relator decida.
@@ -228,7 +239,9 @@ papel`).
 - Gestión de clientes, lugares, tipos de curso, profesores y cursos.
 - Cursos con N jornadas (un curso de 16 h se parte en dos días, cada uno con su QR).
 - Carga de nómina pegada desde Excel o correo.
-- Registro por QR desde el celular: nombre, RUT validado, antecedentes y firma.
+- Registro por QR desde el celular eligiendo el nombre de la lista del curso.
+- Conciliación automática con la nómina, y panel para emparejar a mano lo que
+  no calzó.
 - Modo kiosco en tablet con lápiz óptico, sin cerrar sesión entre participantes.
 - Panel del relator en tiempo real con correcciones auditadas y alta manual.
 - Contenidos impartidos y foto grupal.
@@ -266,11 +279,13 @@ papel`).
 ## Verificación
 
 `node scripts/prueba-e2e.mjs` recorre un curso completo en un navegador real y
-verifica los criterios de aceptación. Última corrida: **17 de 17**.
+verifica los criterios de aceptación. Última corrida: **22 de 22**.
 
 | Criterio | Medido |
 |---|---|
-| Registro completo en menos de 60 s | 2,5 s |
+| Un solo QR muestra la lista del curso | 10 nombres para elegir |
+| Al elegirse de la lista no se escribe el RUT | viene de la nómina |
+| Registro completo en menos de 60 s | 2,4 s |
 | El relator ve el registro en menos de 5 s | 2,3 s |
 | RUT con dígito verificador inválido rechazado | Bloquea el envío |
 | Registro sobre la nómina aceptado y marcado | `EXCEDE_NOMINA` |
@@ -278,6 +293,8 @@ verifica los criterios de aceptación. Última corrida: **17 de 17**.
 | Participante sin celular registrado desde la tablet | Sin salir del kiosco |
 | PDF completo al cerrar la sesión | 219 KB, 4 páginas, 11 firmas |
 | Exportación a Excel | 4 hojas |
+| Conciliación automática al elegirse de la lista | Sin trabajo posterior |
+| Registro fuera de lista detectado para revisión | Panel de conciliación |
 | Envío al cliente el mismo día | Con auditoría |
 
 Las capturas de cada paso quedan en `capturas/`.
@@ -348,6 +365,7 @@ iniciar.sh                   Arranque, con detección de la IP de red
 docker-compose.yml           Alternativa en contenedores
 Dockerfile                   Imagen con Chromium incluido
 INSTALACION.md               Guía de instalación local
+DESPLIEGUE-COOLIFY.md        Guía de despliegue en Coolify con dominio propio
 drizzle/                     Migraciones SQL versionadas
 scripts/
   migrate.ts                 Aplica migraciones
@@ -367,6 +385,7 @@ src/
     pdf.ts                   Generación de PDF con Puppeteer
     correo.ts                Envío transaccional (conmutable por proveedor)
     url.ts                   URL pública (QR) frente a URL interna (PDF)
+    conciliacion.ts          Vínculo entre la nómina y los registros recibidos
     nomina.ts                Interpretación de nóminas pegadas
   components/
     CanvasFirma.tsx          Firma con dedo, lápiz óptico o mouse
@@ -389,25 +408,21 @@ src/
 
 ## Despliegue
 
-La aplicación necesita un runtime Node con acceso al sistema de archivos: **no
-funciona en edge runtime** porque genera PDF con Chromium. Opciones probadas en
-proyectos equivalentes: un contenedor propio, Railway, Render o Fly.io.
+La guía completa está en **[DESPLIEGUE-COOLIFY.md](DESPLIEGUE-COOLIFY.md)**.
 
-En la imagen de despliegue instale Chromium y sus dependencias, y apunte
-`PUPPETEER_EXECUTABLE_PATH` al binario:
+Resumen: Coolify corre la imagen del `Dockerfile`, que ya incluye Chromium para
+generar los PDF. PostgreSQL es un servicio de la misma plataforma, el dominio y
+el certificado HTTPS los gestiona Coolify, y las migraciones se aplican solas al
+arrancar el contenedor.
 
-```dockerfile
-RUN apt-get update && apt-get install -y \
-    chromium fonts-liberation libnss3 libatk-bridge2.0-0 \
-    libcups2 libdrm2 libxkbcommon0 libgbm1 libasound2 \
- && rm -rf /var/lib/apt/lists/*
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-```
+La aplicación necesita un runtime Node con sistema de archivos: **no funciona en
+edge runtime ni en plataformas puramente serverless** sin mover la generación
+del PDF a otro servicio.
 
 Antes de salir a producción:
 
 - `SESSION_SECRET` largo y aleatorio, distinto por ambiente.
-- HTTPS obligatorio: las cookies se emiten con `secure` en producción.
-- Respaldos de PostgreSQL — ahí viven las firmas y los expedientes.
-- Cambiar las contraseñas del seed.
+- Respaldos automáticos de PostgreSQL — ahí viven las firmas y los expedientes.
+- Crear el administrador con `npx tsx scripts/crear-admin.ts` y no usar las
+  contraseñas del seed.
 - Configurar `CORREO_PROVEEDOR=resend` y verificar el dominio remitente.

@@ -7,6 +7,7 @@ import { Estado, ETIQUETA_ESTADO } from '@/components/ui'
 import { formatearRut } from '@/lib/rut'
 import { NIVELES_ESCOLARIDAD } from '@/lib/constantes'
 import type { RegistroSesion } from '@/lib/registros'
+import Conciliacion, { type FilaVista } from './Conciliacion'
 import {
   abrirSesion,
   agregarManual,
@@ -67,9 +68,11 @@ type Props = {
   tienePlantillaEval: boolean
   tienePlantillaEnc: boolean
   esGestion: boolean
+  conciliacion: FilaVista[]
+  alumnosLibres: { id: string; nombre: string }[]
 }
 
-const PESTANAS = ['asistencia', 'contenidos', 'cierre'] as const
+const PESTANAS = ['asistencia', 'conciliacion', 'contenidos', 'cierre'] as const
 type Pestana = (typeof PESTANAS)[number]
 
 export default function PanelProfesor(props: Props) {
@@ -251,7 +254,7 @@ export default function PanelProfesor(props: Props) {
               pestana === p ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
             }`}
           >
-            {p === 'cierre' ? 'Foto y cierre' : p}
+            {p === 'cierre' ? 'Foto y cierre' : p === 'conciliacion' ? 'Lista del curso' : p}
           </button>
         ))}
       </div>
@@ -285,6 +288,15 @@ export default function PanelProfesor(props: Props) {
             onAgregar={(datos) => ejecutar(() => agregarManual(props.sesionId, datos))}
           />
         </div>
+      )}
+
+      {pestana === 'conciliacion' && (
+        <Conciliacion
+          sesionId={props.sesionId}
+          filas={props.conciliacion}
+          libres={props.alumnosLibres}
+          bloqueada={cerrada}
+        />
       )}
 
       {pestana === 'contenidos' && (

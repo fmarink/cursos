@@ -8,6 +8,7 @@ import { sesionActual } from '@/lib/auth'
 import { contenidosDeSesion, encuestasDeSesion, registrosDeSesion, resumir } from '@/lib/registros'
 import { nombreLugar, sesionConContexto } from '@/lib/sesiones'
 import { qrEsAlcanzableDesdeCelular, urlPublica } from '@/lib/url'
+import { alumnosLibres, conciliacionDeSesion } from '@/lib/conciliacion'
 import { Estado, formatearFecha } from '@/components/ui'
 import PanelProfesor from './PanelProfesor'
 
@@ -46,6 +47,11 @@ export default async function PaginaSesion({ params }: { params: Promise<{ id: s
     ])
 
   const resumen = resumir(registros, ctx.curso.nominaEsperada)
+
+  const [filasConciliacion, libres] = await Promise.all([
+    conciliacionDeSesion(id, ctx.curso.id),
+    alumnosLibres(ctx.curso.id),
+  ])
 
   return (
     <div className="space-y-6">
@@ -93,6 +99,29 @@ export default async function PaginaSesion({ params }: { params: Promise<{ id: s
         tienePlantillaEval={plantillasEval.length > 0}
         tienePlantillaEnc={plantillasEnc.length > 0}
         esGestion={usuario.rol !== 'PROFESOR'}
+        conciliacion={filasConciliacion.map((f) => ({
+          nominaItemId: f.nominaItemId,
+          participanteId: f.participanteId,
+          nombreNomina: f.nombreNomina,
+          rutNomina: f.rutNomina,
+          nombreRegistrado: f.nombreRegistrado,
+          rutRegistrado: f.rutRegistrado,
+          empresa: f.empresa,
+          cargo: f.cargo,
+          hora: f.registradoEn
+            ? new Date(f.registradoEn).toLocaleTimeString('es-CL', {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false,
+                timeZone: 'America/Santiago',
+              })
+            : null,
+          tieneFirma: f.tieneFirma,
+          origen: f.origen,
+          vinculadoPor: f.vinculadoPor,
+          situacion: f.situacion,
+        }))}
+        alumnosLibres={libres.map((a) => ({ id: a.id, nombre: a.nombre }))}
       />
     </div>
   )

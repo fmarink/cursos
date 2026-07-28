@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { and, count, eq, sql } from 'drizzle-orm'
+import { and, count, eq, ne, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/db'
 import {
@@ -9,6 +9,7 @@ import {
   asistencias,
   bloquesContenido,
   cursos,
+  nominaItems,
   participantes,
   sesiones,
 } from '@/db/schema'
@@ -516,6 +517,166 @@ export async function eliminarAdjunto(sesionId: string, adjuntoId: string): Prom
     accion: 'adjunto_eliminado',
     usuarioId: usuario.id,
   })
+  refrescar(sesionId)
+  return { ok: true }
+}
+
+// ---------------------------------------------------------------------------
+// Conciliación con la lista del curso
+// ---------------------------------------------------------------------------
+
+/**
+ * Empareja un registro con un alumno de la nómina enviada por el cliente.
+ *
+ * Es la operación que cierra el círculo cuando la persona no eligió su nombre
+ * de la lista: el instructor mira el registro, reconoce de quién se trata y los
+ * vincula. Queda auditado con autor y momento.
+ */
+export async function vincularConNomina(
+  sesionId: string,
+  participanteId: string,
+  nominaItemId: string | null,
+): Promise<Resultado> {
+  const { usuario, sesion } = await contexto(sesionId)
+
+  const [previo] = await db
+    .select()
+    .from(participantes)
+    .where(eq(participantes.id, participanteId))
+    .limit(1)
+  if (!previo) return { ok: false, error: 'Registro no encontrado.' }
+
+  if (nominaItemId) {
+    // El alumno de la nómina debe pertenecer a este curso...
+    const [alumno] = await db
+      .select()
+      .from(nominaItems)
+      .where(and(eq(nominaItems.id, nominaItemId), eq(nominaItems.cursoId, sesion.cursoId)))
+      .limit(1)
+    if (!alumno) return { ok: false, error: 'Ese alumno no pertenece a este curso.' }
+
+    // ...y no puede estar ya tomado por otro registro.
+    const [ocupado] = await db
+      .select({ id: participantes.id, nombre: participantes.nombre })
+      .from(participantes)
+      .where(
+        and(
+          eq(participantes.nominaItemId, nominaItemId),
+          eq(participantes.anulado, false),
+          ne(participantes.id, participanteId),
+        ),
+      )
+      .limit(1)
+    if (ocupado) {
+      return {
+        ok: false,
+        error: `"${alumno.nombre}" ya está vinculado al registro de ${ocupado.nombre}. Desvincule ese primero.`,
+      }
+    }
+  }
+
+  await db
+    .update(participantes)
+    .set({
+      nominaItemId,
+      vinculadoPor: nominaItemId ? usuario.nombre : null,
+      vinculadoEn: nominaItemId ? new Date() : null,
+      // Vincularlo resuelve la alerta de "fuera de nómina".
+      estadoValidacion:
+        nominaItemId && previo.estadoValidacion === 'FUERA_DE_NOMINA'
+          ? 'OK'
+          : previo.estadoValidacion,
+      notaRevision: nominaItemId && previo.estadoValidacion === 'FUERA_DE_NOMINA'
+        ? null
+        : previo.notaRevision,
+      actualizadoEn: new Date(),
+    })
+    .where(eq(participantes.id, participanteId))
+
+  await auditar({
+    entidad: 'participante',
+    entidadId: participanteId,
+    accion: nominaItemId ? 'vinculado_a_nomina' : 'desvinculado_de_nomina',
+    valorAnterior: { nominaItemId: previo.nominaItemId },
+    valorNuevo: { nominaItemId },
+    usuarioId: usuario.id,
+    ip: await ipCliente(),
+  })
+
+  refrescar(sesionId)
+  return { ok: true }
+}
+
+/**
+ * Registra en la jornada a un alumno de la nómina que no vino a firmar.
+ * Se crea el participante ya vinculado y marcado como pendiente de firma.
+ */
+export async function registrarDesdeNomina(
+  sesionId: string,
+  nominaItemId: string,
+): Promise<Resultado> {
+  const { usuario, sesion } = await contexto(sesionId)
+
+  const [alumno] = await db
+    .select()
+    .from(nominaItems)
+    .where(and(eq(nominaItems.id, nominaItemId), eq(nominaItems.cursoId, sesion.cursoId)))
+    .limit(1)
+  if (!alumno) return { ok: false, error: 'Ese alumno no pertenece a este curso.' }
+
+  const rut = alumno.rut ? normalizarRut(alumno.rut) : null
+  if (!rut || !validarRut(rut)) {
+    return {
+      ok: false,
+      error:
+        'La nómina no trae un RUT válido para esa persona. Agréguela con el botón de alta manual.',
+    }
+  }
+
+  let [p] = await db
+    .select()
+    .from(participantes)
+    .where(and(eq(participantes.cursoId, sesion.cursoId), eq(participantes.rut, rut)))
+    .limit(1)
+
+  if (!p) {
+    ;[p] = await db
+      .insert(participantes)
+      .values({
+        nombre: alumno.nombre,
+        rut,
+        empresa: alumno.empresa,
+        cargo: alumno.cargo,
+        origen: 'MANUAL',
+        estadoValidacion: 'SIN_FIRMA',
+        notaRevision: 'Alta desde la nómina por el relator: aún sin firma.',
+        cursoId: sesion.cursoId,
+        nominaItemId,
+        vinculadoPor: usuario.nombre,
+        vinculadoEn: new Date(),
+      })
+      .returning()
+  } else if (!p.nominaItemId) {
+    await db
+      .update(participantes)
+      .set({ nominaItemId, vinculadoPor: usuario.nombre, vinculadoEn: new Date() })
+      .where(eq(participantes.id, p.id))
+  }
+
+  await db
+    .insert(asistencias)
+    .values({ participanteId: p.id, sesionId, origen: 'MANUAL', dispositivo: 'escritorio' })
+    .onConflictDoNothing()
+
+  await auditar({
+    entidad: 'participante',
+    entidadId: p.id,
+    accion: 'alta_desde_nomina',
+    valorNuevo: { nombre: alumno.nombre, rut, nominaItemId },
+    usuarioId: usuario.id,
+    ip: await ipCliente(),
+  })
+
   refrescar(sesionId)
   return { ok: true }
 }

@@ -55,6 +55,46 @@ async function firmar(pagina) {
   await pagina.waitForSelector('text=Firma registrada', { timeout: 5000 })
 }
 
+/**
+ * Registra a una persona. Si el curso tiene lista cargada, la elige de ahí
+ * (el camino normal); si no aparece, cae al formulario libre.
+ */
+async function registrar(pagina, url, { nombre, rut, empresa, cargo, escolaridad }) {
+  await pagina.goto(url)
+  const hayLista = await pagina
+    .waitForSelector('text=Busque su nombre en la lista', { timeout: 4000 })
+    .then(() => true)
+    .catch(() => false)
+
+  let desdeLista = false
+  if (hayLista) {
+    const boton = pagina.locator(`button:has-text("${nombre}")`).first()
+    if ((await boton.count()) > 0 && !(await boton.isDisabled())) {
+      await boton.click()
+      await pagina.waitForSelector('text=Registrando a', { timeout: 10000 })
+      desdeLista = true
+    } else {
+      await pagina.click('button:has-text("No encuentro mi nombre")')
+    }
+  }
+
+  if (!desdeLista) {
+    await pagina.fill('#nombre', nombre)
+    await pagina.fill('#rut', rut)
+    if (empresa || cargo || escolaridad) {
+      await pagina.click('summary:has-text("Antecedentes")')
+      if (empresa) await pagina.fill('#empresa', empresa)
+      if (cargo) await pagina.fill('#cargo', cargo)
+      if (escolaridad) await pagina.selectOption('#escolaridad', escolaridad)
+    }
+  }
+
+  await firmar(pagina)
+  await pagina.click('button:has-text("Confirmar asistencia")')
+  await pagina.waitForSelector('text=Asistencia registrada', { timeout: 15000 })
+  return desdeLista
+}
+
 const navegador = await chromium.launch({
   executablePath: CHROME,
   args: ['--no-sandbox', '--disable-dev-shm-usage'],
@@ -105,10 +145,18 @@ try {
 
   const t0 = Date.now()
   await movil.goto(urlAsistencia)
-  await capturar(movil, 'movil-formulario')
+  await capturar(movil, 'movil-lista-del-curso')
 
-  // --- Criterio: un RUT con DV inválido es rechazado ---
-  await movil.fill('#nombre', 'Tomás Machuca Herrera')
+  const muestraLista = await movil.isVisible('text=Busque su nombre en la lista')
+  verificar(
+    'Un solo QR muestra la lista del curso, sin QR por persona',
+    muestraLista,
+    `${(await movil.locator('ul button').count())} nombres para elegir`,
+  )
+
+  // --- Criterio: un RUT con DV inválido es rechazado (vía formulario libre) ---
+  await movil.click('button:has-text("No encuentro mi nombre")')
+  await movil.fill('#nombre', 'Persona De Prueba')
   await movil.fill('#rut', '15707103-9') // DV incorrecto a propósito (el correcto es 3)
   await movil.locator('#rut').blur()
   await movil.waitForTimeout(300)
@@ -121,13 +169,19 @@ try {
   )
   await capturar(movil, 'movil-rut-invalido')
 
-  // --- Registro correcto ---
-  await movil.fill('#rut', '15707103-3')
-  await movil.locator('#rut').blur()
-  await movil.click('summary:has-text("Antecedentes")')
-  await movil.fill('#empresa', 'Anglo American')
-  await movil.fill('#cargo', 'Mantenedor')
-  await movil.selectOption('#escolaridad', 'Técnico superior')
+  // --- Registro eligiendo el nombre de la lista ---
+  await movil.goto(urlAsistencia)
+  await movil.waitForSelector('text=Busque su nombre en la lista', { timeout: 10000 })
+  await movil.click('button:has-text("Tomás Machuca Herrera")')
+  await movil.waitForSelector('text=Registrando a', { timeout: 10000 })
+
+  const pideRut = (await movil.locator('#rut').count()) > 0
+  verificar(
+    'Al elegirse de la lista no hay que escribir el RUT',
+    !pideRut,
+    pideRut ? 'lo sigue pidiendo' : 'el RUT viene de la nómina',
+  )
+
   await firmar(movil)
   await capturar(movil, 'movil-firmado')
 
@@ -135,7 +189,7 @@ try {
   await movil.waitForSelector('text=Asistencia registrada', { timeout: 15000 })
   const segundos = (Date.now() - t0) / 1000
   verificar(
-    'Un participante completa nombre, RUT y firma en menos de 60 segundos',
+    'Un participante se identifica y firma en menos de 60 segundos',
     segundos < 60,
     `${segundos.toFixed(1)} s`,
   )
@@ -162,20 +216,19 @@ try {
     ['Arturo Alvarado Villar', '18209864-7', 'Especialista'],
     ['David Quilpué González', '14257708-9', 'Lubricador'],
   ]
+  let desdeLista = 0
   for (const [nombre, rut, cargo] of otros) {
     const p = await ctxMovil.newPage()
-    await p.goto(urlAsistencia)
-    await p.fill('#nombre', nombre)
-    await p.fill('#rut', rut)
-    await p.click('summary:has-text("Antecedentes")')
-    await p.fill('#empresa', 'Anglo American')
-    await p.fill('#cargo', cargo)
-    await p.selectOption('#escolaridad', 'Técnico superior')
-    await firmar(p)
-    await p.click('button:has-text("Confirmar asistencia")')
-    await p.waitForSelector('text=Asistencia registrada', { timeout: 15000 })
+    if (await registrar(p, urlAsistencia, { nombre, rut, cargo, empresa: 'Anglo American' })) {
+      desdeLista++
+    }
     await p.close()
   }
+  verificar(
+    'Los participantes de la nómina se identifican eligiendo su nombre',
+    desdeLista === otros.length,
+    `${desdeLista} de ${otros.length} desde la lista`,
+  )
   console.log(`     ${otros.length} participantes adicionales registrados`)
 
   // =====================================================================
@@ -191,11 +244,9 @@ try {
   await tablet.waitForSelector('text=Registre su asistencia')
   await capturar(tablet, 'tablet-kiosco')
 
-  await tablet.fill('#nombre', 'Daniel Ruiz Gaete')
-  await tablet.fill('#rut', '13577192-9')
-  await tablet.click('summary:has-text("Antecedentes")')
-  await tablet.fill('#empresa', 'Anglo American')
-  await tablet.fill('#cargo', 'Montenedor')
+  await tablet.waitForSelector('text=Busque su nombre en la lista', { timeout: 10000 })
+  await tablet.click('button:has-text("Daniel Ruiz Gaete")')
+  await tablet.waitForSelector('text=Registrando a', { timeout: 10000 })
   await firmar(tablet)
   await tablet.click('button:has-text("Confirmar asistencia")')
   await tablet.waitForSelector('text=Asistencia registrada', { timeout: 15000 })
@@ -210,8 +261,9 @@ try {
 
   // Segundo participante en la misma tablet, sin recargar
   await tablet.click('button:has-text("Siguiente participante")')
-  await tablet.fill('#nombre', 'Gerardo Cárcamo Órdenes')
-  await tablet.fill('#rut', '19128576-K')
+  await tablet.waitForSelector('text=Busque su nombre en la lista', { timeout: 10000 })
+  await tablet.click('button:has-text("Gerardo Cárcamo Órdenes")')
+  await tablet.waitForSelector('text=Registrando a', { timeout: 10000 })
   await firmar(tablet)
   await tablet.click('button:has-text("Confirmar asistencia")')
   await tablet.waitForSelector('text=Asistencia registrada', { timeout: 15000 })
@@ -228,18 +280,15 @@ try {
   ]
   for (const [nombre, rut] of restantes) {
     const p = await ctxMovil.newPage()
-    await p.goto(urlAsistencia)
-    await p.fill('#nombre', nombre)
-    await p.fill('#rut', rut)
-    await firmar(p)
-    await p.click('button:has-text("Confirmar asistencia")')
-    await p.waitForSelector('text=Asistencia registrada', { timeout: 15000 })
+    await registrar(p, urlAsistencia, { nombre, rut })
     await p.close()
   }
 
-  // El número 11: no está en la nómina de 10.
+  // Alguien que no está en la lista del cliente.
   const extra = await ctxMovil.newPage()
   await extra.goto(urlAsistencia)
+  await extra.waitForSelector('text=Busque su nombre en la lista', { timeout: 10000 })
+  await extra.click('button:has-text("No encuentro mi nombre")')
   await extra.fill('#nombre', 'Sebastián Núñez Ibarra')
   await extra.fill('#rut', '16123456-7')
   await firmar(extra)
@@ -262,6 +311,31 @@ try {
     marcado ? 'aceptado y marcado "Excede nómina"' : 'no se marcó',
   )
   await capturar(ops, 'panel-con-alerta')
+
+  // =====================================================================
+  console.log('\n[6b] Conciliación con la lista del curso')
+  // =====================================================================
+  await ops.getByTestId('pestana-conciliacion').click()
+  await ops.waitForTimeout(1200)
+
+  const detectaSinConciliar = await ops.isVisible('text=Registros sin conciliar')
+  verificar(
+    'El panel identifica el registro que no corresponde a nadie de la lista',
+    detectaSinConciliar,
+    'Sebastián Núñez Ibarra queda para revisión',
+  )
+
+  const textoConciliacion = await ops.locator('body').innerText()
+  const conciliadosOk = /(\d+)\s*\n?\s*Conciliados/.test(textoConciliacion)
+  verificar(
+    'Los que eligieron su nombre quedan conciliados solos, sin trabajo posterior',
+    conciliadosOk,
+    'vínculo automático al elegirse de la lista',
+  )
+  await capturar(ops, 'conciliacion')
+
+  await ops.getByTestId('pestana-asistencia').click()
+  await ops.waitForTimeout(600)
 
   // =====================================================================
   console.log('\n[7] Corrección auditada de un RUT mal ingresado')

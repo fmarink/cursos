@@ -12,7 +12,8 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:reset": "tsx scripts/reset.ts",
     "import:profesores": "tsx scripts/import-profesores.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "crear:admin": "tsx scripts/crear-admin.ts"
   },
   "keywords": [],
   "author": "",

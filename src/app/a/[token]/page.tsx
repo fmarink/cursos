@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { buscarSesionPorToken, nombreLugar } from '@/lib/sesiones'
+import { listaDelCurso, paraElParticipante } from '@/lib/conciliacion'
 import FormularioAsistencia from './FormularioAsistencia'
 
 export const dynamic = 'force-dynamic'
@@ -15,6 +16,9 @@ export default async function PaginaAsistencia({
   const { kiosco } = await searchParams
   const ctx = await buscarSesionPorToken(token, 'asistencia')
   if (!ctx) notFound()
+
+  // Solo nombre y disponibilidad viajan al navegador. El RUT nunca.
+  const lista = paraElParticipante(await listaDelCurso(ctx.curso.id))
 
   const fecha = new Date(`${ctx.sesion.fecha}T12:00:00`).toLocaleDateString('es-CL', {
     weekday: 'long',
@@ -60,6 +64,7 @@ export default async function PaginaAsistencia({
           (ctx.sesion.estado === 'ABIERTA' || ctx.sesion.estado === 'REABIERTA')
         }
         estadoSesion={ctx.sesion.estado}
+        lista={lista}
       />
 
       <footer className="mt-8 rounded-xl bg-slate-100 p-4 text-xs leading-relaxed text-slate-600">

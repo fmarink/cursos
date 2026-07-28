@@ -299,10 +299,22 @@ export const participantes = pgTable(
     cursoId: varchar('curso_id', { length: 30 })
       .notNull()
       .references(() => cursos.id, { onDelete: 'cascade' }),
+    /**
+     * Alumno de la nómina enviada por el cliente al que corresponde este
+     * registro. Se llena solo cuando la persona elige su nombre de la lista,
+     * y a mano cuando el instructor concilia los que no calzaron.
+     * Null = registro sin conciliar todavía.
+     */
+    nominaItemId: varchar('nomina_item_id', { length: 30 }),
+    /** Quién hizo el vínculo: la propia persona, o el instructor. */
+    vinculadoPor: text('vinculado_por'),
+    vinculadoEn: timestamp('vinculado_en', { withTimezone: true }),
   },
   (t) => [
     uniqueIndex('participantes_curso_rut_uq').on(t.cursoId, t.rut),
     index('participantes_curso_idx').on(t.cursoId),
+    // Un alumno de la nómina no puede quedar vinculado a dos registros.
+    uniqueIndex('participantes_nomina_item_uq').on(t.nominaItemId),
   ],
 )
 
@@ -623,6 +635,10 @@ export const nominaItemsRel = relations(nominaItems, ({ one }) => ({
 
 export const participantesRel = relations(participantes, ({ one, many }) => ({
   curso: one(cursos, { fields: [participantes.cursoId], references: [cursos.id] }),
+  nominaItem: one(nominaItems, {
+    fields: [participantes.nominaItemId],
+    references: [nominaItems.id],
+  }),
   asistencias: many(asistencias),
   evaluaciones: many(evaluaciones),
 }))

@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { sesionActual } from '@/lib/auth'
 import { nombreLugar, sesionConContexto } from '@/lib/sesiones'
+import { listaDelCurso, paraElParticipante } from '@/lib/conciliacion'
 import Kiosco from './Kiosco'
 
 export const dynamic = 'force-dynamic'
@@ -19,6 +20,8 @@ export default async function PaginaKiosco({ params }: { params: Promise<{ id: s
   if (!ctx) notFound()
   if (usuario.rol === 'PROFESOR' && ctx.sesion.profesorId !== usuario.profesorId) notFound()
 
+  const lista = paraElParticipante(await listaDelCurso(ctx.curso.id))
+
   const habilitado =
     ctx.sesion.asistenciaAbierta &&
     (ctx.sesion.estado === 'ABIERTA' || ctx.sesion.estado === 'REABIERTA')
@@ -33,6 +36,7 @@ export default async function PaginaKiosco({ params }: { params: Promise<{ id: s
       cliente={ctx.cliente.razonSocial}
       lugar={nombreLugar(ctx.curso, ctx.lugar)}
       relator={ctx.profesor?.nombre ?? null}
+      lista={lista}
     />
   )
 }

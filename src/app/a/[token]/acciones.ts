@@ -4,21 +4,25 @@ import { createHash } from 'node:crypto'
 import { and, count, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/db'
-import { asistencias, firmas, nominaItems, participantes } from '@/db/schema'
+import { asistencias, firmas, participantes } from '@/db/schema'
 import { auditar } from '@/lib/audit'
 import { ipCliente, userAgentCliente } from '@/lib/auth'
 import { normalizarRut, validarRut } from '@/lib/rut'
 import { aceptaRegistros, buscarSesionPorToken } from '@/lib/sesiones'
+import { listaDelCurso, sugerirCoincidencia } from '@/lib/conciliacion'
 
 const Entrada = z.object({
   nombre: z.string().trim().min(3, 'Ingrese su nombre completo').max(120),
-  rut: z.string().trim().min(3, 'Ingrese su RUT'),
+  /** Puede venir vacío si eligió su nombre de la lista y la nómina trae el RUT. */
+  rut: z.string().trim().optional().or(z.literal('')),
   empresa: z.string().trim().max(120).optional().or(z.literal('')),
   cargo: z.string().trim().max(120).optional().or(z.literal('')),
   nivelEscolaridad: z.string().trim().max(60).optional().or(z.literal('')),
   firmaPng: z.string().min(100, 'Falta la firma'),
   firmaTrazos: z.string().optional(),
   esTablet: z.boolean().optional(),
+  /** Alumno de la lista que la persona seleccionó, si la eligió. */
+  nominaItemId: z.string().optional().or(z.literal('')),
 })
 
 export type ResultadoRegistro =
@@ -57,11 +61,31 @@ export async function registrarAsistencia(
     }
   }
 
-  // --- Validación de RUT (criterio de aceptación: DV inválido se rechaza) ---
-  if (!validarRut(d.rut)) {
+  // --- Lista del curso y alumno elegido ---
+  const lista = await listaDelCurso(ctx.curso.id)
+  const elegido = d.nominaItemId ? (lista.find((a) => a.id === d.nominaItemId) ?? null) : null
+
+  if (d.nominaItemId && !elegido) {
+    return { ok: false, error: 'El nombre seleccionado ya no está disponible. Vuelva a intentarlo.' }
+  }
+  if (elegido?.tomado) {
+    return {
+      ok: false,
+      error:
+        'Ese nombre de la lista ya fue registrado. Si es un error, avise al relator para que lo corrija.',
+    }
+  }
+
+  // --- RUT: el escrito manda; si no escribió, se toma el de la nómina ---
+  const rutCrudo = d.rut && d.rut.length > 0 ? d.rut : (elegido?.rut ?? '')
+  if (!rutCrudo) {
+    return { ok: false, error: 'Ingrese su RUT.', campo: 'rut' }
+  }
+  // Criterio de aceptación: un dígito verificador inválido se rechaza.
+  if (!validarRut(rutCrudo)) {
     return { ok: false, error: 'El RUT no es válido. Revise el dígito verificador.', campo: 'rut' }
   }
-  const rut = normalizarRut(d.rut)!
+  const rut = normalizarRut(rutCrudo)!
 
   const ip = await ipCliente()
   const ua = await userAgentCliente()
@@ -91,31 +115,29 @@ export async function registrarAsistencia(
       })
       .where(eq(participantes.id, existente.id))
   } else {
-    // ¿Está en la nómina que envió el cliente?
-    const nomina = await db
-      .select({ rut: nominaItems.rut })
-      .from(nominaItems)
-      .where(eq(nominaItems.cursoId, ctx.curso.id))
-
-    const rutsNomina = new Set(
-      nomina.map((n) => (n.rut ? normalizarRut(n.rut) : null)).filter(Boolean) as string[],
-    )
+    // --- Conciliación con la lista del curso ---
+    // Manda lo que la persona eligió en pantalla. Si no eligió nada, se intenta
+    // calzar por RUT o por nombre. Si no calza, se acepta igual y queda marcado
+    // para que el instructor lo empareje a mano.
+    const alumno = elegido ?? sugerirCoincidencia(lista, { nombre: d.nombre, rut })
 
     const [{ total }] = await db
       .select({ total: count() })
       .from(participantes)
       .where(and(eq(participantes.cursoId, ctx.curso.id), eq(participantes.anulado, false)))
 
-    // Se acepta igual; solo se marca para revisión posterior.
+    // Se acepta siempre; solo se marca para revisión posterior.
     let estadoValidacion: 'OK' | 'EXCEDE_NOMINA' | 'FUERA_DE_NOMINA' = 'OK'
     let notaRevision: string | null = null
 
-    if (ctx.curso.nominaEsperada > 0 && total >= ctx.curso.nominaEsperada) {
+    if (alumno) {
+      estadoValidacion = 'OK'
+    } else if (ctx.curso.nominaEsperada > 0 && total >= ctx.curso.nominaEsperada) {
       estadoValidacion = 'EXCEDE_NOMINA'
       notaRevision = `Registro ${total + 1} de una nómina esperada de ${ctx.curso.nominaEsperada}.`
-    } else if (rutsNomina.size > 0 && !rutsNomina.has(rut)) {
+    } else if (lista.length > 0) {
       estadoValidacion = 'FUERA_DE_NOMINA'
-      notaRevision = 'El RUT no aparece en la nómina enviada por el cliente.'
+      notaRevision = 'No se pudo emparejar con ningún alumno de la lista del curso.'
     }
 
     const [creado] = await db
@@ -123,13 +145,16 @@ export async function registrarAsistencia(
       .values({
         nombre: d.nombre,
         rut,
-        empresa: d.empresa || null,
-        cargo: d.cargo || null,
+        empresa: d.empresa || alumno?.empresa || null,
+        cargo: d.cargo || alumno?.cargo || null,
         nivelEscolaridad: d.nivelEscolaridad || null,
         origen,
         estadoValidacion,
         notaRevision,
         cursoId: ctx.curso.id,
+        nominaItemId: alumno?.id ?? null,
+        vinculadoPor: alumno ? (d.nominaItemId ? 'participante' : 'automatico') : null,
+        vinculadoEn: alumno ? new Date() : null,
       })
       .returning({ id: participantes.id })
 
@@ -139,7 +164,14 @@ export async function registrarAsistencia(
       entidad: 'participante',
       entidadId: participanteId,
       accion: 'registro_participante',
-      valorNuevo: { nombre: d.nombre, rut, origen, estadoValidacion },
+      valorNuevo: {
+        nombre: d.nombre,
+        rut,
+        origen,
+        estadoValidacion,
+        nominaItemId: alumno?.id ?? null,
+        vinculo: alumno ? (d.nominaItemId ? 'elegido por la persona' : 'automático') : 'sin vincular',
+      },
       actorAnonimo: rut,
       ip,
     })
