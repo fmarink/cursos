@@ -1,0 +1,61 @@
+# Despliegue completo en Coolify: base de datos y aplicación en un solo stack.
+#
+# En Coolify: + New → Application → Docker Compose,
+# y en "Docker Compose Location" indicar  /docker-compose.coolify.yaml
+#
+# Las variables SERVICE_* son magia de Coolify: genera los valores una sola vez,
+# los reutiliza donde aparezcan y los guarda. No hay secretos escritos aquí.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # Coolify asigna aquí el dominio y configura el proxy hacia el puerto 3000.
+      - SERVICE_FQDN_APP_3000
+      # La base viaja por la red interna del stack: nunca sale a internet.
+      - DATABASE_URL=postgresql://uppercap:${SERVICE_PASSWORD_DB}@db:5432/uppercap
+      - SESSION_SECRET=${SERVICE_BASE64_64_SESION}
+      # Uso interno del servidor para imprimirse el PDF a sí mismo.
+      # El dominio de los códigos QR se deduce solo de cada petición.
+      - APP_URL=http://localhost:3000
+      - CORREO_PROVEEDOR=consola
+      - NODE_ENV=production
+      - TZ=America/Santiago
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/salud').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=uppercap
+      - POSTGRES_PASSWORD=${SERVICE_PASSWORD_DB}
+      - POSTGRES_DB=uppercap
+      - TZ=America/Santiago
+    volumes:
+      # Volumen con nombre: los datos sobreviven a cada nuevo despliegue.
+      # Aquí viven las firmas de los participantes y los expedientes.
+      - datos-uppercap:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U uppercap -d uppercap"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  datos-uppercap:
